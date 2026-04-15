@@ -1,4 +1,5 @@
-// Minimal Fireworks (OpenAI-compatible) client. Uses native fetch + SSE parsing.
+// Fireworks AI client (OpenAI-compatible API).
+// complete() for single-shot, stream() for SSE streaming with retry logic.
 
 const BASE_URL = "https://api.fireworks.ai/inference/v1";
 

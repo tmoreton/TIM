@@ -1,4 +1,5 @@
-// LLM stream processing with markdown rendering and spinner management
+// Handles streaming LLM responses: parses SSE chunks, renders markdown line-by-line,
+// manages the "thinking" spinner, accumulates tool calls, tracks token usage.
 
 import * as ui from "./ui.js";
 import { stream } from "./llm.js";

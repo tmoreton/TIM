@@ -1,5 +1,7 @@
-import { spawn } from "node:child_process";
-import { confirm } from "../permissions.js";
+// Bash command execution tool.
+// Runs commands via `bash -c` with configurable timeout (default 120s).
+// Requires user confirmation before running.
+// Handles stdout/stderr buffering with limits and supports abort signals.
 
 const MAX_OUTPUT = 30_000;
 

@@ -1,10 +1,13 @@
+// The main agent loop.
+// Manages conversation state, calls the LLM, executes tool calls, caches results.
+// Exports: agentTurn(), compact(), plus session/model/state getters.
+
 import { tools, toolSchemas } from "./tools/index.js";
 import { loadProjectContext } from "./config.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
 import { complete } from "./llm.js";
 import { streamCompletion, Interrupted } from "./streaming.js";
-import { ToolCache } from "./cache.js";
 import * as ui from "./ui.js";
 
 const DEFAULT_MODEL =
@@ -17,7 +20,6 @@ const state = {
   messages: [],
   session: null,
   usage: { prompt: 0, completion: 0, lastPrompt: 0 },
-  toolCache: new ToolCache(),
 };
 
 const buildSystem = () => {
@@ -35,7 +37,6 @@ export function resetMessages() {
   state.messages = [{ role: "system", content: buildSystem() }];
   state.session = createSession(state.model);
   state.usage = { prompt: 0, completion: 0, lastPrompt: 0 };
-  state.toolCache.clear();
   rehydrateReadsFromMessages([]);
 }
 resetMessages();
@@ -51,7 +52,6 @@ export function resumeSession(data) {
   };
   if (data.model) state.model = data.model;
   state.usage = data.usage || { prompt: 0, completion: 0, lastPrompt: 0 };
-  state.toolCache.clear();
   rehydrateReadsFromMessages(state.messages);
 }
 
@@ -103,23 +103,8 @@ export async function agentTurn(userInput, signal) {
           const tool = tools[name];
           if (!tool) throw new Error(`Unknown tool: ${name}`);
 
-          result = state.toolCache.get(name, args);
-          if (result !== undefined) {
-            ui.toolResult(`(cached) ${String(result).slice(0, 100)}`);
-          } else {
-            result = await tool.run(args, { signal });
-            state.toolCache.set(name, args, result);
-            if (String(result).startsWith("ERROR:")) ui.toolResult(result);
-          }
-
-          // Any successful mutation invalidates the read cache.
-          if (
-            (name === "edit_file" || name === "write_file" || name === "bash") &&
-            !String(result).startsWith("ERROR:") &&
-            !String(result).startsWith("User denied")
-          ) {
-            state.toolCache.clear();
-          }
+          result = await tool.run(args, { signal });
+          if (String(result).startsWith("ERROR:")) ui.toolResult(result);
         } catch (e) {
           result = `ERROR: ${e.message}`;
           ui.toolResult(result);

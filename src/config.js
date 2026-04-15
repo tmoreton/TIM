@@ -1,3 +1,6 @@
+// Loads TIM.md context files: global from ~/.tim/TIM.md + local from ./TIM.md.
+// Used to build the system prompt in agent.js.
+
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";

@@ -1,3 +1,6 @@
+// CLI commands (/help, /model, /clear, /sessions, etc).
+// Each command mutates state via agent.js or prints status info.
+
 import { tools } from "./tools/index.js";
 import {
   resetMessages,

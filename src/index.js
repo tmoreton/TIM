@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Entry point - parses CLI args, sets up the REPL, handles Ctrl+C interrupt.
+// Delegates commands to commands.js, chat to agent.js.
+
 import readline from "node:readline";
 import {
   agentTurn,

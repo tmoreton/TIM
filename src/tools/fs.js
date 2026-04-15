@@ -1,3 +1,8 @@
+// File system tools: list, read, edit, write.
+// All paths are resolved relative to process.cwd() and must stay within it.
+// edit_file requires the file to be read first (tracked in readFiles Set).
+// All destructive operations (edit, write) require user confirmation.
+
 import fs from "node:fs";
 import path from "node:path";
 import { confirm } from "../permissions.js";

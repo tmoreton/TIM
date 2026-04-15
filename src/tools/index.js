@@ -1,3 +1,6 @@
+// Tool registry - exports all tools and their OpenAI-compatible schemas.
+// Each tool has: schema (OpenAI function spec) and run(args, ctx) function.
+
 import { listFiles, readFile, editFile, writeFile } from "./fs.js";
 import { bash } from "./bash.js";
 import { grep, glob } from "./search.js";

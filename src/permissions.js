@@ -1,3 +1,6 @@
+// User confirmation prompts for destructive actions (bash, edit_file, write_file).
+// Supports auto-accept mode, per-session "always allow", and individual y/n prompts.
+
 import { warn, confirmPrompt } from "./ui.js";
 
 const sessionAllow = new Set();

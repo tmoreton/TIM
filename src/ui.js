@@ -1,4 +1,5 @@
-// Minimal ANSI-based TUI helpers. No deps.
+// Terminal UI utilities: colors, banner, markdown rendering, spinners, diff display.
+// All output functions handle non-TTY gracefully (no escape codes).
 
 const SUPPORTS = process.stdout.isTTY && process.env.TERM !== "dumb";
 

@@ -1,3 +1,8 @@
+// Search tools: grep (content search) and glob (file finding).
+// grep prefers `ripgrep` (rg) for speed, falls back to Node.js regex scan.
+// Both tools ignore common dependency directories (node_modules, venv, target, etc) and .git.
+// Results capped at 500 lines.
+
 import { spawn, spawnSync } from "node:child_process";
 import { glob as nodeGlob } from "node:fs/promises";
 import fs from "node:fs";
@@ -7,7 +12,38 @@ const hasRg = spawnSync("which", ["rg"]).status === 0;
 
 const MAX_LINES = 500;
 
-const IGNORE = ["**/node_modules/**", "**/.git/**"];
+// Ignore common dependency/build directories across languages
+const IGNORE = [
+  // JavaScript/Node
+  "**/node_modules/**",
+  // Python
+  "**/__pycache__/**",
+  "**/*.pyc",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/.pytest_cache/**",
+  // Rust
+  "**/target/**",
+  // Go
+  "**/vendor/**",
+  // Java
+  "**/.idea/**",
+  "**/*.class",
+  // Ruby
+  "**/vendor/**",
+  // PHP
+  "**/vendor/**",
+  // General
+  "**/.git/**",
+  "**/.DS_Store",
+  "**/*.log",
+  "**/dist/**",
+  "**/build/**",
+  "**/.next/**",
+  "**/.vercel/**",
+  "**/coverage/**",
+  "**/.cache/**",
+];
 
 const listFiles = async (pattern, cwd) => {
   const out = [];

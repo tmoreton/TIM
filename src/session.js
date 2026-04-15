@@ -1,3 +1,6 @@
+// Session persistence to ~/.tim/sessions/ as JSON files.
+// createSession(), save(), load(), list() — load() supports prefix matching for truncated IDs.
+
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
