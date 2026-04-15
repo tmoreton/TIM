@@ -79,16 +79,34 @@ const safePrompt = () => {
 
 let buffer = [];
 let inHeredoc = false;
+let flushTimer = null;
+const FLUSH_DELAY_MS = 50; // debounce for paste detection
+
 const flushBuffer = () => {
   const joined = buffer.join("\n");
   buffer = [];
   return joined.trim();
 };
 
+const processInput = async () => {
+  const input = flushBuffer();
+  if (!input) return safePrompt();
+  if (input === "exit" || input === "quit") {
+    ui.exitHint(getSessionId());
+    process.exit(0);
+  }
+  if (isCommand(input)) {
+    await runCommand(input);
+    return safePrompt();
+  }
+  await handle(input);
+};
+
 ui.banner(getModel(), process.cwd());
 safePrompt();
 
 rl.on("line", async (line) => {
+  // heredoc mode: collect until closing """
   if (inHeredoc) {
     if (line.trim() === '"""') {
       inHeredoc = false;
@@ -101,29 +119,23 @@ rl.on("line", async (line) => {
     return;
   }
 
+  // entering heredoc mode
   if (line.trim() === '"""') {
     inHeredoc = true;
     return;
   }
 
+  // explicit line continuation with backslash
   if (line.endsWith("\\")) {
     buffer.push(line.slice(0, -1));
     return;
   }
 
   buffer.push(line);
-  const input = flushBuffer();
 
-  if (!input) return safePrompt();
-  if (input === "exit" || input === "quit") {
-    ui.exitHint(getSessionId());
-    process.exit(0);
-  }
-  if (isCommand(input)) {
-    await runCommand(input);
-    return safePrompt();
-  }
-  await handle(input);
+  // debounced flush: if more lines arrive quickly (paste), we wait
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(processInput, FLUSH_DELAY_MS);
 });
 
 async function handle(input) {

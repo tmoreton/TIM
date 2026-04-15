@@ -1,6 +1,16 @@
 # tim
 
-**~1,475 lines of JavaScript · zero magic · zero runtime dependencies** (requires Node ≥22)
+```
+████████╗ ██╗ ███╗   ███╗
+╚══██╔══╝ ██║ ████╗ ████║
+   ██║    ██║ ██║╚██╔╝██║
+   ██║    ██║ ██║ ╚═╝ ██║
+   ╚═╝    ╚═╝ ╚═╝     ╚═╝
+```
+
+*the minimalist coding companion*
+
+**~1,689 lines of JavaScript · zero magic · zero runtime dependencies** (requires Node ≥22)
 
 A minimal, single-developer clone of Claude Code. Runs locally, talks to the Fireworks AI API, uses Kimi K2.5 Turbo, gives the model a handful of file + shell tools, and wraps it in a ReAct loop.
 
