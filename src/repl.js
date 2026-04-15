@@ -3,6 +3,7 @@
 import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { agentTurn, getModel, getSessionId } from "./agent.js";
 import { Interrupted } from "./streaming.js";
 import { isCommand, runCommand } from "./commands.js";
@@ -14,38 +15,61 @@ import * as ui from "./ui.js";
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 const PDF_EXT = ".pdf";
 
+// Resolve a candidate path string (handles ~ and shell-escaped spaces).
+const resolvePath = (raw) => {
+  const unescaped = raw.replace(/\\(.)/g, "$1");
+  if (unescaped.startsWith("~"))
+    return path.join(os.homedir(), unescaped.slice(1));
+  return path.resolve(unescaped);
+};
+
+// Walks back from each image/pdf extension to the nearest path-start
+// (`/`, `~`, `./`, `../`) and picks the longest prefix that exists on disk.
+// This handles unquoted paths with spaces like screenshot filenames.
 const extractAttachments = (text) => {
   const images = [];
   const pdfs = [];
-  // Match quoted paths and bare paths (including spaces in quotes)
-  const pathRegex = /"([^"]+\.(?:png|jpg|jpeg|gif|webp|bmp|pdf))"|'([^']+\.(?:png|jpg|jpeg|gif|webp|bmp|pdf))'|(\S+\.(?:png|jpg|jpeg|gif|webp|bmp|pdf))/gi;
+  const ranges = [];
+  const seen = new Set();
 
-  let match;
-  const found = new Set();
-  while ((match = pathRegex.exec(text)) !== null) {
-    const filePath = match[1] || match[2] || match[3];
-    if (found.has(filePath.toLowerCase())) continue;
-    found.add(filePath.toLowerCase());
+  const extRegex = /\.(png|jpg|jpeg|gif|webp|bmp|pdf)\b/gi;
+  let m;
+  while ((m = extRegex.exec(text)) !== null) {
+    const extEnd = m.index + m[0].length;
 
-    // Resolve relative to cwd (remove escapes from drag-drop)
-    const resolved = path.resolve(filePath.replace(/\\/g, ''));
-    if (!fs.existsSync(resolved)) continue;
+    // Candidate path starts: `/`, `~`, `./`, `../` at start of input or after whitespace/quote.
+    const starts = [];
+    const startRegex = /(?:^|[\s"'])((?:[/~]|\.{1,2}\/))/g;
+    let sm;
+    while ((sm = startRegex.exec(text)) !== null) {
+      const s = sm.index + sm[0].length - sm[1].length;
+      if (s < extEnd) starts.push(s);
+    }
+    starts.sort((a, b) => a - b); // longest match first
 
-    const ext = path.extname(resolved).toLowerCase();
-    if (IMAGE_EXTS.has(ext)) {
-      images.push(resolved);
-    } else if (ext === PDF_EXT) {
-      pdfs.push(resolved);
+    for (const s of starts) {
+      const raw = text.slice(s, extEnd).replace(/^["']|["']$/g, "");
+      const resolved = resolvePath(raw);
+      try {
+        if (!fs.statSync(resolved).isFile()) continue;
+      } catch {
+        continue;
+      }
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        const ext = path.extname(resolved).toLowerCase();
+        if (IMAGE_EXTS.has(ext)) images.push(resolved);
+        else if (ext === PDF_EXT) pdfs.push(resolved);
+      }
+      ranges.push([s, extEnd]);
+      break;
     }
   }
 
-  // Remove the paths from the text
   let cleaned = text;
-  for (const p of found) {
-    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    cleaned = cleaned.replace(new RegExp(`["']?${escaped}["']?`, 'gi'), ' ');
-  }
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  for (const [s, e] of ranges.sort((a, b) => b[0] - a[0]))
+    cleaned = cleaned.slice(0, s) + " " + cleaned.slice(e);
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
 
   return { text: cleaned, images, pdfs };
 };

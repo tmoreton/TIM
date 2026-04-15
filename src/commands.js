@@ -62,7 +62,8 @@ const printHelp = () => {
   console.log();
 };
 
-export const isCommand = (input) => input.startsWith("/");
+// A command is `/word` (optionally followed by args) — not a file path like `/Users/...`.
+export const isCommand = (input) => /^\/[a-zA-Z][a-zA-Z0-9_-]*(\s|$)/.test(input);
 
 export async function runCommand(input) {
   const [cmd, ...rest] = input.slice(1).split(/\s+/);

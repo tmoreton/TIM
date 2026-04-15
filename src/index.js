@@ -1,6 +1,21 @@
 #!/usr/bin/env node
 // Entry point - parses CLI args, then starts the REPL.
 
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+// Load ~/.tim/.env into process.env (existing env wins)
+const envPath = path.join(os.homedir(), ".tim", ".env");
+try {
+  for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/i);
+    if (!m || line.trim().startsWith("#")) continue;
+    const val = m[2].replace(/^["'](.*)["']$/, "$1");
+    if (!process.env[m[1]]) process.env[m[1]] = val;
+  }
+} catch {}
+
 import {
   resumeSession,
 } from "./agent.js";

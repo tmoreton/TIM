@@ -6,8 +6,9 @@ const BASE_URL = "https://api.fireworks.ai/inference/v1";
 const getKey = () => {
   const k = process.env.FIREWORKS_API_KEY;
   if (!k) {
-    console.error("Set FIREWORKS_API_KEY in your environment.");
-    process.exit(1);
+    throw new Error(
+      "FIREWORKS_API_KEY not set. Export it in your shell, or add `FIREWORKS_API_KEY=...` to ~/.tim/.env",
+    );
   }
   return k;
 };
@@ -41,8 +42,9 @@ const fetchWithRetry = async (url, init) => {
       const retryAfter = Number(res.headers.get("retry-after")) || 0;
       const wait = retryAfter * 1000 || backoff(attempt);
       clearLine();
-      process.stderr.write(`  retrying in ${Math.round(wait)}ms (HTTP ${res.status}, attempt ${attempt + 2}/${MAX_ATTEMPTS})\n`);
+      process.stderr.write(`  retrying in ${Math.round(wait)}ms (HTTP ${res.status}, attempt ${attempt + 2}/${MAX_ATTEMPTS})`);
       await sleep(wait, init.signal);
+      clearLine();
     } catch (e) {
       if (init.signal?.aborted || attempt >= MAX_ATTEMPTS - 1) {
         if (e?.cause?.code) e.message = `${e.message} (${e.cause.code})`;
@@ -50,8 +52,9 @@ const fetchWithRetry = async (url, init) => {
       }
       const wait = backoff(attempt);
       clearLine();
-      process.stderr.write(`  retrying in ${Math.round(wait)}ms (${e.cause?.code || e.message}, attempt ${attempt + 2}/${MAX_ATTEMPTS})\n`);
+      process.stderr.write(`  retrying in ${Math.round(wait)}ms (${e.cause?.code || e.message}, attempt ${attempt + 2}/${MAX_ATTEMPTS})`);
       await sleep(wait, init.signal);
+      clearLine();
     }
   }
 };
