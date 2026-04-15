@@ -69,7 +69,13 @@ export function load(id) {
     throw new Error(
       `Ambiguous session id "${safeId}" — matches ${matches.length} sessions. Use /sessions to see full IDs.`,
     );
-  throw new Error(`Session not found: ${safeId}`);
+  const recent = fs.readdirSync(DIR)
+    .filter(f => f.endsWith('.json'))
+    .sort((a, b) => fs.statSync(path.join(DIR, b)).mtimeMs - fs.statSync(path.join(DIR, a)).mtimeMs)
+    .slice(0, 3)
+    .map(f => `  ${f.replace('.json', '')}`)
+    .join('\n');
+  throw new Error(`Session not found: ${safeId}\nRecent sessions:\n${recent}`);
 }
 
 export function list() {

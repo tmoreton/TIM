@@ -12,6 +12,7 @@ import {
   getSessionId,
 } from "./agent.js";
 import { list as listSessions } from "./session.js";
+import { loadAgents } from "./agents.js";
 import { setAutoAccept, isAutoAccept } from "./permissions.js";
 import { c, info, success, error, exitHint } from "./ui.js";
 
@@ -24,6 +25,7 @@ const HELP_ROWS = [
   ["/tokens", "show token usage"],
   ["/compact", "summarize older messages to free context"],
   ["/sessions", "list saved sessions"],
+  ["/agents", "list available sub-agent profiles"],
   ["/yolo", "toggle auto-accept for edits and bash (USE WITH CARE)"],
   ["/exit", "quit"],
 ];
@@ -122,6 +124,21 @@ export async function runCommand(input) {
         console.log(
           `  ${c.teal(s.id.slice(0, 19))}  ${c.dim(`[${s.turns} turns]`)}  ${c.dim(when)}  ${c.white(s.cwd)}`,
         );
+      }
+      console.log();
+      return;
+    }
+    case "agents": {
+      const profiles = Object.values(loadAgents());
+      if (!profiles.length) {
+        info("no agents found — add markdown files to ~/.tim/agents/ or ./.tim/agents/");
+        return;
+      }
+      console.log();
+      const pad = Math.max(...profiles.map((p) => p.name.length)) + 2;
+      for (const p of profiles) {
+        const tools = p.tools ? p.tools.join(",") : "all";
+        console.log(`  ${c.teal(p.name.padEnd(pad))} ${c.dim(p.description)} ${c.dim(`[${tools}]`)}`);
       }
       console.log();
       return;

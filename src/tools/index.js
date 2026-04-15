@@ -4,6 +4,7 @@
 import { listFiles, readFile, editFile, writeFile } from "./fs.js";
 import { bash } from "./bash.js";
 import { grep, glob } from "./search.js";
+import { spawnAgent } from "./spawn.js";
 
 export const tools = {
   list_files: listFiles,
@@ -13,6 +14,7 @@ export const tools = {
   bash,
   grep,
   glob,
+  spawn_agent: spawnAgent,
 };
 
 export const toolSchemas = Object.values(tools).map((t) => t.schema);

@@ -18,9 +18,11 @@ try {
 
 import {
   resumeSession,
+  createAgent,
 } from "./agent.js";
 import { runCommand } from "./commands.js";
 import { load as loadSession, latest } from "./session.js";
+import { loadAgents } from "./agents.js";
 import { setAutoAccept } from "./permissions.js";
 import { startRepl } from "./repl.js";
 import * as ui from "./ui.js";
@@ -31,6 +33,34 @@ const argv = process.argv.slice(2);
 if (argv.includes("--list")) {
   await runCommand("/sessions");
   process.exit(0);
+}
+
+// Headless: `tim run <agent> "<task>"` — run a profile to completion and exit.
+if (argv[0] === "run") {
+  const name = argv[1];
+  const task = argv.slice(2).join(" ").trim();
+  if (!name || !task) {
+    console.error('usage: tim run <agent> "<task>"');
+    process.exit(1);
+  }
+  const profile = loadAgents()[name];
+  if (!profile) {
+    console.error(`unknown agent: ${name}`);
+    process.exit(1);
+  }
+  setAutoAccept(true); // headless: no interactive prompts
+  const agent = createAgent(profile);
+  try {
+    await agent.turn(task);
+    const last = agent.state.messages
+      .filter((m) => m.role === "assistant" && !m.tool_calls?.length && m.content)
+      .pop();
+    if (last?.content) console.log(last.content);
+    process.exit(0);
+  } catch (e) {
+    console.error(`ERROR: ${e.message}`);
+    process.exit(1);
+  }
 }
 
 if (argv.includes("--yolo")) {
