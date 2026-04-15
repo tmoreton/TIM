@@ -59,23 +59,64 @@ export const listFiles = {
   },
 };
 
+const MAX_FILE_CHARS = 50_000; // ~12k tokens, reasonable for most files
+const MAX_FILE_LINES = 500;
+
 export const readFile = {
   schema: {
     type: "function",
     function: {
       name: "read_file",
-      description: "Read the full contents of a text file.",
+      description:
+        "Read the contents of a text file. Large files are truncated with a warning. Use offset to read specific sections.",
       parameters: {
         type: "object",
-        properties: { path: { type: "string" } },
+        properties: {
+          path: { type: "string" },
+          offset: {
+            type: "number",
+            description: "Line offset to start reading from (0-indexed)",
+          },
+          limit: {
+            type: "number",
+            description: `Max lines to read (max ${MAX_FILE_LINES})`,
+          },
+        },
         required: ["path"],
       },
     },
   },
-  run: async ({ path: p }) => {
+  run: async ({ path: p, offset = 0, limit }) => {
     const abs = resolveSafe(p);
     const content = fs.readFileSync(abs, "utf8");
     readFiles.add(abs);
+
+    const lines = content.split("\n");
+    const totalLines = lines.length;
+    const effectiveLimit = Math.min(limit || MAX_FILE_LINES, MAX_FILE_LINES);
+
+    // Apply offset/limit
+    if (offset > 0 || totalLines > effectiveLimit) {
+      const start = Math.min(offset, totalLines);
+      const end = Math.min(start + effectiveLimit, totalLines);
+      const slice = lines.slice(start, end).join("\n");
+      const prefix =
+        start > 0 ? `[lines ${start}-${end} of ${totalLines}]\n` : "";
+      const suffix =
+        end < totalLines
+          ? `\n...[${totalLines - end} more lines, use offset:${end} to continue]`
+          : "";
+      return prefix + slice + suffix;
+    }
+
+    // Simple truncation for huge single-line or massive files
+    if (content.length > MAX_FILE_CHARS) {
+      return (
+        content.slice(0, MAX_FILE_CHARS) +
+        `\n...[truncated ${content.length - MAX_FILE_CHARS} chars]`
+      );
+    }
+
     return content;
   },
 };

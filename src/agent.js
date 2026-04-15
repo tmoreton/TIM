@@ -8,18 +8,21 @@ import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
 import { complete } from "./llm.js";
 import { streamCompletion, Interrupted } from "./streaming.js";
+import { ToolCache } from "./cache.js";
 import * as ui from "./ui.js";
 
 const DEFAULT_MODEL =
   process.env.TIM_MODEL || "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 const CONTEXT_LIMIT = Number(process.env.TIM_CONTEXT_LIMIT || 128_000);
+const COMPACT_THRESHOLD = 0.6; // Auto-compact at 60% to balance context retention
 
 const state = {
   model: DEFAULT_MODEL,
   messages: [],
   session: null,
   usage: { prompt: 0, completion: 0, lastPrompt: 0 },
+  toolCache: new ToolCache(),
 };
 
 const buildSystem = () => {
@@ -37,6 +40,7 @@ export function resetMessages() {
   state.messages = [{ role: "system", content: buildSystem() }];
   state.session = createSession(state.model);
   state.usage = { prompt: 0, completion: 0, lastPrompt: 0 };
+  state.toolCache.clear();
   rehydrateReadsFromMessages([]);
 }
 resetMessages();
@@ -52,6 +56,7 @@ export function resumeSession(data) {
   };
   if (data.model) state.model = data.model;
   state.usage = data.usage || { prompt: 0, completion: 0, lastPrompt: 0 };
+  state.toolCache.clear();
   rehydrateReadsFromMessages(state.messages);
 }
 
@@ -87,8 +92,12 @@ export async function agentTurn(userInput, signal) {
           sessionId: state.session?.id,
           model: state.model,
         });
-        if (state.usage.lastPrompt / CONTEXT_LIMIT >= 0.8)
-          ui.info("context filling up — run /compact");
+        
+        // Auto-compact at threshold to stay lean
+        if (state.usage.lastPrompt / CONTEXT_LIMIT >= COMPACT_THRESHOLD) {
+          ui.info(`context at ${Math.round((state.usage.lastPrompt / CONTEXT_LIMIT) * 100)}% — auto-compacting...`);
+          await compact();
+        }
         return;
       }
 
@@ -103,8 +112,14 @@ export async function agentTurn(userInput, signal) {
           const tool = tools[name];
           if (!tool) throw new Error(`Unknown tool: ${name}`);
 
-          result = await tool.run(args, { signal });
-          if (String(result).startsWith("ERROR:")) ui.toolResult(result);
+          result = state.toolCache.get(name, args);
+          if (result !== undefined) {
+            ui.toolResult(`(cached) ${String(result).slice(0, 100)}`);
+          } else {
+            result = await tool.run(args, { signal });
+            state.toolCache.set(name, args, result);
+            if (String(result).startsWith("ERROR:")) ui.toolResult(result);
+          }
         } catch (e) {
           result = `ERROR: ${e.message}`;
           ui.toolResult(result);
