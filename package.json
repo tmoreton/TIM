@@ -1,15 +1,16 @@
 {
   "name": "tim",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Minimal Claude Code-style CLI using Fireworks + Kimi K2.5 Turbo",
   "type": "module",
   "bin": {
-    "tim": "./index.js"
+    "tim": "./src/index.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node src/index.js"
   },
   "dependencies": {
+    "fast-glob": "^3.3.2",
     "openai": "^4.77.0"
   },
   "engines": {
