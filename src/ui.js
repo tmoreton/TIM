@@ -85,9 +85,13 @@ export const resetMarkdown = () => {
 };
 
 const inlineReplace = (line) => {
-  // fenced: skip inline rules inside code blocks
-  if (mdCodeBlock) return c.teal(line);
-  // inline code `x`
+  // fenced: skip inline rules inside code blocks (but handle language marker)
+  if (mdCodeBlock) {
+    // Still dim the fence line itself if it has a language specifier
+    if (/^\s*```\w*/.test(line)) return c.dim(line);
+    return c.teal(line);
+  }
+  // inline code `x` - but not inside code blocks (handled above)
   line = line.replace(/`([^`]+)`/g, (_, t) => c.teal(t));
   // bold **x**
   line = line.replace(/\*\*([^*]+)\*\*/g, (_, t) => c.bold(t));
@@ -197,6 +201,7 @@ export function toolResult(result) {
 }
 
 const MAX_DIFF_LINES = 20;
+const DIFF_CONTEXT = 2;
 
 const printDiffBlock = (lines, sign, color) => {
   const shown = lines.slice(0, MAX_DIFF_LINES);
@@ -205,11 +210,46 @@ const printDiffBlock = (lines, sign, color) => {
     console.log(c.dim(`     ... (+${lines.length - MAX_DIFF_LINES} more)`));
 };
 
+const printContext = (lines) => {
+  for (const l of lines) console.log(c.dim(`       ${l}`));
+};
+
 export function editDiff(oldStr, newStr) {
   const oldLines = oldStr.split("\n");
   const newLines = newStr.split("\n");
-  printDiffBlock(oldLines, "-", "red");
-  printDiffBlock(newLines, "+", "green");
+
+  // Trim common prefix and suffix so we only show the actual change.
+  let prefix = 0;
+  const maxPrefix = Math.min(oldLines.length, newLines.length);
+  while (prefix < maxPrefix && oldLines[prefix] === newLines[prefix]) prefix++;
+
+  let suffix = 0;
+  const maxSuffix = Math.min(oldLines.length - prefix, newLines.length - prefix);
+  while (
+    suffix < maxSuffix &&
+    oldLines[oldLines.length - 1 - suffix] ===
+      newLines[newLines.length - 1 - suffix]
+  )
+    suffix++;
+
+  const oldChanged = oldLines.slice(prefix, oldLines.length - suffix);
+  const newChanged = newLines.slice(prefix, newLines.length - suffix);
+
+  if (oldChanged.length === 0 && newChanged.length === 0) {
+    console.log(c.dim("     (no effective change)"));
+    return;
+  }
+
+  const ctxBefore = oldLines.slice(Math.max(0, prefix - DIFF_CONTEXT), prefix);
+  const ctxAfter = oldLines.slice(
+    oldLines.length - suffix,
+    oldLines.length - suffix + DIFF_CONTEXT,
+  );
+
+  printContext(ctxBefore);
+  printDiffBlock(oldChanged, "-", "red");
+  printDiffBlock(newChanged, "+", "green");
+  printContext(ctxAfter);
 }
 
 export function writeDiff(content) {
@@ -251,7 +291,7 @@ export const success = (msg) => console.log(c.green(`  ✓ ${msg}`));
 export function exitHint(sessionId) {
   if (!sessionId) return;
   console.log();
-  console.log(c.dim("  resume this session with:"));
+  console.log(c.dim("  resume with:"));
   console.log(`    ${c.teal(`tim --resume ${sessionId}`)}`);
   console.log();
 }

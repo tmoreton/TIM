@@ -53,8 +53,21 @@ export const bash = {
       };
       ctx.signal?.addEventListener("abort", onAbort, { once: true });
 
-      child.stdout.on("data", (d) => (stdout += d.toString()));
-      child.stderr.on("data", (d) => (stderr += d.toString()));
+      const MAX_BUFFER = 100_000;
+      child.stdout.on("data", (d) => {
+        stdout += d.toString();
+        if (stdout.length > MAX_BUFFER) {
+          stdout = stdout.slice(0, MAX_BUFFER) + "\n[stdout buffer full]";
+          child.stdout.destroy();
+        }
+      });
+      child.stderr.on("data", (d) => {
+        stderr += d.toString();
+        if (stderr.length > MAX_BUFFER) {
+          stderr = stderr.slice(0, MAX_BUFFER) + "\n[stderr buffer full]";
+          child.stderr.destroy();
+        }
+      });
 
       child.on("close", (code) => {
         clearTimeout(timer);

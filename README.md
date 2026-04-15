@@ -1,6 +1,6 @@
 # tim
 
-**~1,300 lines of JavaScript · zero magic · zero runtime dependencies** (requires Node ≥22)
+**~1,475 lines of JavaScript · zero magic · zero runtime dependencies** (requires Node ≥22)
 
 A minimal, single-developer clone of Claude Code. Runs locally, talks to the Fireworks AI API, uses Kimi K2.5 Turbo, gives the model a handful of file + shell tools, and wraps it in a ReAct loop.
 
@@ -30,15 +30,17 @@ TIM/
 └── src/
     ├── index.js              # entry: REPL, argv, SIGINT, multi-line input
     ├── agent.js              # ReAct loop, streaming, token tracking, compaction
-    ├── commands.js           # slash commands (/help, /clear, /compact, ...)
+    ├── llm.js                # native fetch + SSE parser for Fireworks
+    ├── ui.js                 # ANSI colors, spinner, markdown renderer, diffs
+    ├── commands.js           # slash commands (/help, /clear, /compact, /yolo, ...)
     ├── config.js             # loads TIM.md (global + project) into the system prompt
-    ├── permissions.js        # y/a/n confirm before edits and bash
+    ├── permissions.js        # y/a/n confirm + auto-accept toggle
     ├── session.js            # save/load ~/.tim/sessions/<id>.json
     └── tools/
         ├── index.js          # tool registry
         ├── fs.js             # list_files, read_file, edit_file, write_file
         ├── bash.js           # bash tool with timeout + abort
-        └── search.js         # grep (rg) and glob (fast-glob)
+        └── search.js         # grep (rg w/ Node fallback) and glob (fs.glob)
 ```
 
 Each file is small enough to read in one sitting. Start with `src/index.js` and follow the imports.
@@ -54,7 +56,7 @@ A thin `readline` loop. Reads a line, decides whether it's a slash command, a mu
 Extras it handles:
 - **Multi-line input** — trailing `\` continues the current line; `"""` on its own line toggles a heredoc block.
 - **Ctrl+C** — first hit mid-turn aborts the request (and kills any running bash child). Double-tap at the idle prompt exits.
-- **Launch flags** — `tim --resume [id]`, `tim --list`.
+- **Launch flags** — `tim --resume [id]`, `tim --list`, `tim --yolo` (auto-accept).
 
 ### 2. The ReAct loop (`src/agent.js`)
 
@@ -88,8 +90,8 @@ Each tool is `{ schema, run }`. The schema is an OpenAI function-calling schema;
 | `edit_file` | string-replace edit (unique match, or `replace_all`) | yes |
 | `write_file` | create or overwrite | yes |
 | `bash` | spawn `bash -c` with timeout, capture stdout/stderr | yes |
-| `grep` | `rg` with a Node fallback | no |
-| `glob` | `fast-glob` | no |
+| `grep` | `rg` with a Node `fs.glob` fallback | no |
+| `glob` | Node's native `fs.glob` (async iterable) | no |
 
 Two invariants worth knowing:
 - **Paths are sandboxed** to the current working directory. `../` tricks are blocked by a proper prefix check (`abs === cwd || abs.startsWith(cwd + path.sep)`).
@@ -125,6 +127,7 @@ Handled before anything ever hits the model:
 | `/tokens` | last-prompt and cumulative token usage |
 | `/compact` | summarize + truncate history |
 | `/sessions` | list saved sessions |
+| `/yolo` | toggle auto-accept for edits and bash (use with care) |
 | `/exit` | quit |
 
 ### 6. Project context (`src/config.js`)

@@ -2,10 +2,16 @@ import { warn, confirmPrompt } from "./ui.js";
 
 const sessionAllow = new Set();
 let sharedRl = null;
+let autoAccept = false;
 
 export const setReadline = (rl) => {
   sharedRl = rl;
 };
+
+export const setAutoAccept = (v) => {
+  autoAccept = !!v;
+};
+export const isAutoAccept = () => autoAccept;
 
 const keyFor = (tool, args) => {
   if (tool === "bash") {
@@ -27,6 +33,7 @@ const ask = (question) =>
   });
 
 export async function confirm(tool, args, preview) {
+  if (autoAccept) return true;
   const key = keyFor(tool, args);
   if (sessionAllow.has(key)) return true;
 

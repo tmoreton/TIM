@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { glob as nodeGlob } from "node:fs/promises";
 import fs from "node:fs";
+import path from "node:path";
 
 const hasRg = spawnSync("which", ["rg"]).status === 0;
 
@@ -10,7 +11,8 @@ const IGNORE = ["**/node_modules/**", "**/.git/**"];
 
 const listFiles = async (pattern, cwd) => {
   const out = [];
-  for await (const f of nodeGlob(pattern, { cwd, exclude: IGNORE })) {
+  const dir = path.resolve(cwd);
+  for await (const f of nodeGlob(pattern, { cwd: dir, exclude: IGNORE })) {
     out.push(f);
     if (out.length >= 10_000) break;
   }
@@ -73,12 +75,13 @@ export const grep = {
     } catch (e) {
       return `ERROR: invalid regex: ${e.message}`;
     }
-    const files = await listFiles(glob || "**/*", p);
+    const absPath = path.resolve(p);
+    const files = await listFiles(glob || "**/*", absPath);
     const results = [];
     for (const f of files) {
       let text;
       try {
-        text = fs.readFileSync(`${p}/${f}`, "utf8");
+        text = fs.readFileSync(path.join(absPath, f), "utf8");
       } catch {
         continue;
       }

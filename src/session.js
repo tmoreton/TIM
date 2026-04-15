@@ -29,20 +29,44 @@ export function save(session, messages, usage) {
 
 export function load(id) {
   ensureDir();
-  const exact = path.join(DIR, `${id}.json`);
-  if (fs.existsSync(exact)) return JSON.parse(fs.readFileSync(exact, "utf8"));
+  if (!id || typeof id !== "string") {
+    throw new Error("Session ID required");
+  }
+  
+  // Sanitize ID to prevent directory traversal
+  const safeId = id.replace(/[\/\\]/g, "");
+  if (!safeId) {
+    throw new Error("Invalid session ID");
+  }
+  
+  const exact = path.join(DIR, `${safeId}.json`);
+  if (fs.existsSync(exact)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(exact, "utf8"));
+      // Validate required fields
+      if (!data.id || !Array.isArray(data.messages)) {
+        throw new Error("Corrupted session file");
+      }
+      return data;
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        throw new Error(`Corrupted session file: ${safeId}`);
+      }
+      throw e;
+    }
+  }
 
   // Prefix match (e.g. user pasted a truncated ID from the status footer).
   const matches = fs
     .readdirSync(DIR)
-    .filter((f) => f.endsWith(".json") && f.startsWith(id));
+    .filter((f) => f.endsWith(".json") && f.startsWith(safeId));
   if (matches.length === 1)
     return JSON.parse(fs.readFileSync(path.join(DIR, matches[0]), "utf8"));
   if (matches.length > 1)
     throw new Error(
-      `Ambiguous session id "${id}" — matches ${matches.length} sessions. Use /sessions to see full IDs.`,
+      `Ambiguous session id "${safeId}" — matches ${matches.length} sessions. Use /sessions to see full IDs.`,
     );
-  throw new Error(`Session not found: ${id}`);
+  throw new Error(`Session not found: ${safeId}`);
 }
 
 export function list() {

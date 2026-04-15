@@ -15,6 +15,7 @@ const state = {
   messages: [],
   session: null,
   usage: { prompt: 0, completion: 0, lastPrompt: 0 },
+  toolCache: new Map(),
 };
 
 const buildSystem = () => {
@@ -194,8 +195,26 @@ export async function agentTurn(userInput, signal) {
           ui.toolCall(name, args);
           const tool = tools[name];
           if (!tool) throw new Error(`Unknown tool: ${name}`);
-          result = await tool.run(args, { signal });
-          if (String(result).startsWith("ERROR:")) ui.toolResult(result);
+          
+          // Simple cache for deterministic reads (read_file, list_files, grep, glob)
+          const cacheable = ["read_file", "list_files", "grep", "glob"].includes(name);
+          const cacheKey = cacheable ? `${name}:${JSON.stringify(args)}` : null;
+          
+          if (cacheKey && state.toolCache.has(cacheKey)) {
+            result = state.toolCache.get(cacheKey);
+            ui.toolResult(`(cached) ${String(result).slice(0, 100)}`);
+          } else {
+            result = await tool.run(args, { signal });
+            if (cacheKey && !String(result).startsWith("ERROR:")) {
+              state.toolCache.set(cacheKey, result);
+              // Keep cache size bounded
+              if (state.toolCache.size > 100) {
+                const firstKey = state.toolCache.keys().next().value;
+                state.toolCache.delete(firstKey);
+              }
+            }
+            if (String(result).startsWith("ERROR:")) ui.toolResult(result);
+          }
         } catch (e) {
           result = `ERROR: ${e.message}`;
           ui.toolResult(result);

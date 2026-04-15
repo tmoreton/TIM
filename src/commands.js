@@ -9,6 +9,7 @@ import {
   getSessionId,
 } from "./agent.js";
 import { list as listSessions } from "./session.js";
+import { setAutoAccept, isAutoAccept } from "./permissions.js";
 import { c, info, success, error, exitHint } from "./ui.js";
 
 const HELP_ROWS = [
@@ -20,6 +21,7 @@ const HELP_ROWS = [
   ["/tokens", "show token usage"],
   ["/compact", "summarize older messages to free context"],
   ["/sessions", "list saved sessions"],
+  ["/yolo", "toggle auto-accept for edits and bash (USE WITH CARE)"],
   ["/exit", "quit"],
 ];
 
@@ -32,6 +34,7 @@ const FLAG_ROWS = [
   ["tim", "start fresh"],
   ["tim --resume [id]", "resume latest or by id"],
   ["tim --list", "list sessions and exit"],
+  ["tim --yolo", "start with auto-accept on (use with care)"],
 ];
 
 const printRows = (title, rows) => {
@@ -110,6 +113,17 @@ export async function runCommand(input) {
         );
       }
       console.log();
+      return;
+    }
+    case "yolo":
+    case "auto": {
+      const next = !isAutoAccept();
+      setAutoAccept(next);
+      if (next)
+        console.log(
+          `  ${c.yellow("⚠")}  ${c.bold("auto-accept ON")} ${c.dim("— edits and bash commands will run without prompting")}`,
+        );
+      else success("auto-accept OFF");
       return;
     }
     case "exit":

@@ -9,7 +9,7 @@ import {
 } from "./agent.js";
 import { isCommand, runCommand } from "./commands.js";
 import { load as loadSession, latest } from "./session.js";
-import { setReadline } from "./permissions.js";
+import { setReadline, setAutoAccept } from "./permissions.js";
 import * as ui from "./ui.js";
 
 // --- argv handling ---
@@ -17,6 +17,10 @@ const argv = process.argv.slice(2);
 if (argv.includes("--list")) {
   await runCommand("/sessions");
   process.exit(0);
+}
+if (argv.includes("--yolo")) {
+  setAutoAccept(true);
+  ui.info("⚠ auto-accept ON (--yolo) — edits and bash run without prompting");
 }
 
 const resumeIdx = argv.indexOf("--resume");
@@ -43,9 +47,8 @@ let currentAbort = null;
 let lastSigintAt = 0;
 
 process.on("SIGINT", () => {
-  if (currentAbort) {
+  if (currentAbort && !currentAbort.signal.aborted) {
     currentAbort.abort();
-    currentAbort = null;
     return;
   }
   const now = Date.now();

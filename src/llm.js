@@ -46,18 +46,46 @@ export async function* stream(body, { signal } = {}) {
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let lineBuffer = "";
 
   for await (const chunk of res.body) {
     buffer += decoder.decode(chunk, { stream: true });
-    // SSE events are separated by a blank line.
-    const events = buffer.split("\n\n");
-    buffer = events.pop() ?? "";
-
-    for (const evt of events) {
-      for (const line of evt.split("\n")) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = line.slice(6).trim();
-        if (payload === "[DONE]") return;
+    
+    // Process line by line to handle events split across chunks
+    const lines = buffer.split("\n");
+    // Keep the last (potentially incomplete) line in buffer
+    buffer = lines.pop() ?? "";
+    
+    for (const line of lines) {
+      lineBuffer += line;
+      
+      // Empty line means end of SSE event
+      if (line === "") {
+        // Parse the accumulated event data
+        const dataMatch = lineBuffer.match(/data: (.+)/);
+        if (dataMatch) {
+          const payload = dataMatch[1].trim();
+          if (payload === "[DONE]") return;
+          try {
+            yield JSON.parse(payload);
+          } catch {
+            // skip malformed chunk
+          }
+        }
+        lineBuffer = "";
+      } else {
+        lineBuffer += "\n";
+      }
+    }
+  }
+  
+  // Process any remaining data
+  if (buffer) {
+    lineBuffer += buffer;
+    const dataMatch = lineBuffer.match(/data: (.+)/);
+    if (dataMatch) {
+      const payload = dataMatch[1].trim();
+      if (payload !== "[DONE]") {
         try {
           yield JSON.parse(payload);
         } catch {
