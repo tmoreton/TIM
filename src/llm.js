@@ -21,11 +21,52 @@ const throwIfBad = async (res) => {
   const text = await res.text().catch(() => "");
   const err = new Error(`API ${res.status}: ${text.slice(0, 300)}`);
   err.status = res.status;
+  err.retryAfter = Number(res.headers.get("retry-after")) || 0;
   throw err;
 };
 
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 5;
+
+const fetchWithRetry = async (url, init) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok || !RETRY_STATUS.has(res.status) || attempt >= MAX_ATTEMPTS - 1) return res;
+      const retryAfter = Number(res.headers.get("retry-after")) || 0;
+      const wait = retryAfter * 1000 || backoff(attempt);
+      process.stderr.write(`  retrying in ${Math.round(wait)}ms (HTTP ${res.status}, attempt ${attempt + 2}/${MAX_ATTEMPTS})\n`);
+      await sleep(wait, init.signal);
+    } catch (e) {
+      if (init.signal?.aborted || attempt >= MAX_ATTEMPTS - 1) {
+        if (e?.cause?.code) e.message = `${e.message} (${e.cause.code})`;
+        throw e;
+      }
+      const wait = backoff(attempt);
+      process.stderr.write(`  retrying in ${Math.round(wait)}ms (${e.cause?.code || e.message}, attempt ${attempt + 2}/${MAX_ATTEMPTS})\n`);
+      await sleep(wait, init.signal);
+    }
+  }
+};
+
+const backoff = (attempt) => 250 * 2 ** attempt + Math.floor(Math.random() * 250);
+
+const sleep = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(signal.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
 export async function complete(body, { signal } = {}) {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const res = await fetchWithRetry(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify(body),
@@ -36,7 +77,7 @@ export async function complete(body, { signal } = {}) {
 }
 
 export async function* stream(body, { signal } = {}) {
-  const res = await fetch(`${BASE_URL}/chat/completions`, {
+  const res = await fetchWithRetry(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ ...body, stream: true }),
