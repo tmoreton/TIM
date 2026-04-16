@@ -53,7 +53,7 @@ if (argv[0] === "run") {
     process.exit(1);
   }
   setAutoAccept(true); // headless: no interactive prompts
-  const agent = createAgent(profile);
+  const agent = await createAgent(profile);
   try {
     await agent.turn(task);
     const last = agent.state.messages

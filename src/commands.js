@@ -1,7 +1,7 @@
 // CLI commands (/help, /model, /clear, /sessions, etc).
 // Each command mutates state via agent.js or prints status info.
 
-import { tools } from "./tools/index.js";
+import { getTools } from "./tools/index.js";
 import {
   resetMessages,
   getModel,
@@ -14,12 +14,26 @@ import {
 import { list as listSessions } from "./session.js";
 import { loadAgents } from "./agents.js";
 import { setEnv, unsetEnv, listEnv, mask } from "./env.js";
-import { setAutoAccept, isAutoAccept } from "./permissions.js";
+import { setAutoAccept, isAutoAccept, setPlanMode, isPlanMode } from "./permissions.js";
 import { c, info, success, error, exitHint } from "./ui.js";
+import {
+  getCustomToolsDir,
+  ensureToolsDir,
+  listCustomToolNames,
+  readToolSource,
+  writeToolSource,
+  deleteTool,
+  generateToolTemplate,
+  reloadCustomTools,
+} from "./tools/custom.js";
 
 const HELP_ROWS = [
   ["/help", "show this help"],
-  ["/tools", "list registered tools"],
+  ["/tools", "list tools (core + custom)"],
+  ["/tool list", "list custom tools"],
+  ["/tool create <name>", "create new custom tool in ~/.tim/tools/"],
+  ["/tool edit <name>", "edit custom tool in $EDITOR"],
+  ["/tool delete <name>", "delete custom tool"],
   ["/model [id]", "show or switch model"],
   ["/clear", "reset conversation (starts a new session)"],
   ["/context", "show whether TIM.md was loaded"],
@@ -29,6 +43,7 @@ const HELP_ROWS = [
   ["/agents", "list available sub-agent profiles"],
   ["/env", "manage $TIM_DIR/.env (list | set KEY=VAL | unset KEY)"],
   ["/yolo", "toggle auto-accept for edits and bash (USE WITH CARE)"],
+  ["/plan", "toggle plan mode — model drafts a plan, no edits/bash run"],
   ["/exit", "quit"],
 ];
 
@@ -77,28 +92,38 @@ export async function runCommand(input) {
     case "help":
       printHelp();
       return;
-    case "tools":
+    case "tools": {
+      const tools = await getTools();
+      const customNames = await listCustomToolNames();
       console.log();
-      for (const name of Object.keys(tools))
+      console.log("  " + c.bold(c.teal("core tools")));
+      for (const name of Object.keys(tools).filter(n => !customNames.includes(n)))
         console.log(`  ${c.teal("•")} ${c.white(name)}`);
+      if (customNames.length) {
+        console.log();
+        console.log("  " + c.bold(c.teal("custom tools")));
+        for (const name of customNames)
+          console.log(`  ${c.teal("•")} ${c.white(name)} ${c.dim("(custom)")}`);
+      }
       console.log();
       return;
+    }
     case "model":
-      if (!arg) info(`model: ${getModel()}`);
+      if (!arg) info(`model: ${await getModel()}`);
       else {
-        setModel(arg);
+        await setModel(arg);
         success(`model → ${arg}`);
       }
       return;
     case "clear":
-      resetMessages();
+      await resetMessages();
       success("conversation cleared — new session");
       return;
     case "context":
       info(hasProjectContext() ? "TIM.md loaded" : "no TIM.md found");
       return;
     case "tokens": {
-      const u = getUsage();
+      const u = await getUsage();
       const pctColor = u.pctUsed >= 80 ? "yellow" : u.pctUsed >= 50 ? "white" : "gray";
       console.log();
       console.log(
@@ -185,9 +210,75 @@ export async function runCommand(input) {
       else success("auto-accept OFF");
       return;
     }
+    case "plan": {
+      const next = !isPlanMode();
+      setPlanMode(next);
+      if (next)
+        console.log(
+          `  ${c.teal("◐")}  ${c.bold("plan mode ON")} ${c.dim("— model will draft a plan; edit_file/write_file/bash are blocked")}`,
+        );
+      else success("plan mode OFF — ask the model to proceed with the plan");
+      return;
+    }
+      case "tool": {
+      const args = arg.split(/\s+/);
+      const sub = args[0];
+      
+      if (!sub || sub === "list") {
+        const custom = await listCustomToolNames();
+        console.log();
+        console.log("  " + c.bold(c.teal("custom tools")));
+        if (custom.length) {
+          for (const name of custom) console.log(`  ${c.teal("•")} ${c.white(name)}`);
+        } else {
+          console.log(`  ${c.dim("(none — create one with /tool create <name>)")}`);
+        }
+        console.log();
+        return;
+      }
+      
+      if (sub === "create") {
+        const name = args[1];
+        if (!name) { error("usage: /tool create <name>"); return; }
+        ensureToolsDir();
+        const template = generateToolTemplate(name);
+        const p = writeToolSource(name, template);
+        await reloadCustomTools();
+        success(`created ${p}`);
+        info("edit the file to implement your tool logic");
+        return;
+      }
+      
+      if (sub === "edit") {
+        const name = args[1];
+        if (!name) { error("usage: /tool edit <name>"); return; }
+        const dir = getCustomToolsDir();
+        const p = `${dir}/${name}.js`;
+        const source = readToolSource(name);
+        if (!source) { error(`tool "${name}" not found at ${p}`); return; }
+        const editor = process.env.EDITOR || "vi";
+        const { spawnSync } = await import("node:child_process");
+        spawnSync(editor, [p], { stdio: "inherit" });
+        await reloadCustomTools();
+        success(`reloaded ${name}`);
+        return;
+      }
+      
+      if (sub === "delete") {
+        const name = args[1];
+        if (!name) { error("usage: /tool delete <name>"); return; }
+        const deleted = deleteTool(name);
+        if (!deleted) { error(`tool "${name}" not found`); return; }
+        success(`deleted ${name}`);
+        return;
+      }
+      
+      error("usage: /tool [list|create|edit|delete] <name>");
+      return;
+    }
     case "exit":
     case "quit":
-      exitHint(getSessionId());
+      exitHint(await getSessionId());
       process.exit(0);
     default:
       error(`unknown command: /${cmd} — try /help`);

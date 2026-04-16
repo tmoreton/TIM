@@ -5,13 +5,20 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { tools as allTools, toolSchemas as allSchemas } from "./tools/index.js";
+import { getTools, getToolSchemas } from "./tools/index.js";
 import { loadProjectContext } from "./config.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
 import { complete, streamCompletion, Interrupted } from "./llm.js";
 import { ToolCache } from "./cache.js";
+import { isPlanMode } from "./permissions.js";
 import * as ui from "./ui.js";
+
+const PLAN_PREFIX =
+  "[PLAN MODE] Research freely with read_file / grep / glob / list_files, " +
+  "but DO NOT call edit_file, write_file, or bash. Draft a short numbered " +
+  "plan (files to change, what to change, in what order) and stop. The user " +
+  "will run /plan to exit plan mode, then tell you to proceed.\n\n";
 
 // --- Multimodal helpers ----------------------------------------------------
 
@@ -76,7 +83,10 @@ const COMPACT_THRESHOLD = 0.6;
 
 // --- Agent factory ---------------------------------------------------------
 
-export function createAgent(profile = null) {
+export async function createAgent(profile = null) {
+  const allTools = await getTools();
+  const allSchemas = await getToolSchemas();
+  
   const tools = profile?.tools
     ? Object.fromEntries(Object.entries(allTools).filter(([n]) => profile.tools.includes(n)))
     : allTools;
@@ -140,7 +150,8 @@ You have tools: ${toolList}.
   };
 
   const turn = async (userInput, signal, attachments = null) => {
-    const userMessage = buildUserMessage(userInput, attachments);
+    const text = isPlanMode() ? PLAN_PREFIX + userInput : userInput;
+    const userMessage = buildUserMessage(text, attachments);
     state.messages.push(userMessage);
 
     try {
@@ -281,14 +292,47 @@ You have tools: ${toolList}.
 
 // --- Default agent + back-compat exports -----------------------------------
 
-const main = createAgent();
+let main = null;
+let mainReady = null;
 
-export const agentTurn = (input, signal, attachments) => main.turn(input, signal, attachments);
-export const compact = () => main.compact();
-export const resetMessages = () => main.reset();
-export const resumeSession = (data) => main.resume(data);
-export const getModel = () => main.getModel();
-export const setModel = (m) => main.setModel(m);
-export const getSessionId = () => main.getSessionId();
-export const getUsage = () => main.getUsage();
+// Lazy init for async createAgent
+function ensureMain() {
+  if (!mainReady) {
+    mainReady = createAgent().then(agent => { main = agent; });
+  }
+  return mainReady;
+}
+
+export const agentTurn = async (input, signal, attachments) => {
+  await ensureMain();
+  return main.turn(input, signal, attachments);
+};
+export const compact = async () => {
+  await ensureMain();
+  return main.compact();
+};
+export const resetMessages = async () => {
+  await ensureMain();
+  return main.reset();
+};
+export const resumeSession = async (data) => {
+  await ensureMain();
+  return main.resume(data);
+};
+export const getModel = async () => {
+  await ensureMain();
+  return main.getModel();
+};
+export const setModel = async (m) => {
+  await ensureMain();
+  return main.setModel(m);
+};
+export const getSessionId = async () => {
+  await ensureMain();
+  return main.getSessionId();
+};
+export const getUsage = async () => {
+  await ensureMain();
+  return main.getUsage();
+};
 export const hasProjectContext = () => !!loadProjectContext();

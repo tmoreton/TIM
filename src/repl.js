@@ -4,7 +4,7 @@ import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { agentTurn, getModel, getSessionId } from "./agent.js";
+import { agentTurn, getModel, getSessionId, resetMessages, resumeSession } from "./agent.js";
 import { Interrupted } from "./llm.js";
 import { isCommand, runCommand } from "./commands.js";
 import { setReadline } from "./permissions.js";
@@ -85,6 +85,11 @@ let inHeredoc = false;
 let flushTimer = null;
 const FLUSH_DELAY_MS = 50; // debounce for paste detection
 
+// Inputs typed while a turn is running land here and drain FIFO when idle.
+const inputQueue = [];
+const previewInput = (s) =>
+  (s.length > 60 ? s.slice(0, 57) + "..." : s).replace(/\n/g, " ");
+
 const flushBuffer = () => {
   const joined = buffer.join("\n");
   buffer = [];
@@ -100,6 +105,16 @@ const safePrompt = () => {
 const processInput = async (initialAttachments = null) => {
   const rawInput = flushBuffer();
   if (!rawInput) return safePrompt();
+  await processRaw(rawInput, initialAttachments);
+};
+
+const processRaw = async (rawInput, initialAttachments = null) => {
+  // If a turn is in progress, park the raw input for after it finishes.
+  if (currentAbort) {
+    inputQueue.push({ rawInput, initialAttachments });
+    ui.info(`queued (${inputQueue.length}): ${previewInput(rawInput)}`);
+    return;
+  }
 
   // Extract any image/pdf paths from the input
   const { text: input, images, pdfs } = extractAttachments(rawInput);
@@ -111,12 +126,12 @@ const processInput = async (initialAttachments = null) => {
   };
 
   if (input === "exit" || input === "quit") {
-    ui.exitHint(getSessionId());
+    ui.exitHint(await getSessionId());
     process.exit(0);
   }
   if (isCommand(input)) {
     await runCommand(input);
-    return safePrompt();
+    return drainOrPrompt();
   }
 
   // Show detected attachments
@@ -126,6 +141,15 @@ const processInput = async (initialAttachments = null) => {
   }
 
   await handle(input, allAttachments);
+};
+
+const drainOrPrompt = async () => {
+  if (inputQueue.length) {
+    const { rawInput, initialAttachments } = inputQueue.shift();
+    await processRaw(rawInput, initialAttachments);
+  } else {
+    safePrompt();
+  }
 };
 
 const handle = async (input, attachments) => {
@@ -142,22 +166,27 @@ const handle = async (input, attachments) => {
     }
   } finally {
     currentAbort = null;
-    safePrompt();
+    await drainOrPrompt();
   }
 };
 
 // --- Event handlers --------------------------------------------------------
 
-const handleSigint = () => {
+const handleSigint = async () => {
   if (currentAbort && !currentAbort.signal.aborted) {
     currentAbort.abort();
+    if (inputQueue.length) {
+      const n = inputQueue.length;
+      inputQueue.length = 0;
+      ui.info(`cleared ${n} queued`);
+    }
     return;
   }
   const now = Date.now();
   if (now - lastSigintAt < 1500) {
     console.log();
     ui.info("bye.");
-    ui.exitHint(getSessionId());
+    ui.exitHint(await getSessionId());
     process.exit(0);
   }
   lastSigintAt = now;
@@ -203,7 +232,7 @@ const setupLineHandler = (initialAttachments) => {
 
 // --- Public API ------------------------------------------------------------
 
-export function startRepl(initialAttachments = null) {
+export async function startRepl(initialAttachments = null) {
   rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -216,7 +245,7 @@ export function startRepl(initialAttachments = null) {
   rl.on("SIGINT", handleSigint);
   rl.on("close", () => process.exit(0));
 
-  ui.banner(getModel(), process.cwd());
+  ui.banner(await getModel(), process.cwd());
   setupLineHandler(initialAttachments);
   safePrompt();
 

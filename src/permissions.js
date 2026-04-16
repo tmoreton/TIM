@@ -1,11 +1,12 @@
 // User confirmation prompts for destructive actions (bash, edit_file, write_file).
 // Supports auto-accept mode, per-session "always allow", and individual y/n prompts.
 
-import { warn, confirmPrompt } from "./ui.js";
+import { warn, confirmPrompt, info } from "./ui.js";
 
 const sessionAllow = new Set();
 let sharedRl = null;
 let autoAccept = false;
+let planMode = false;
 
 export const setReadline = (rl) => {
   sharedRl = rl;
@@ -15,6 +16,11 @@ export const setAutoAccept = (v) => {
   autoAccept = !!v;
 };
 export const isAutoAccept = () => autoAccept;
+
+export const setPlanMode = (v) => {
+  planMode = !!v;
+};
+export const isPlanMode = () => planMode;
 
 const keyFor = (tool, args) => {
   if (tool === "bash") {
@@ -36,6 +42,10 @@ const ask = (question) =>
   });
 
 export async function confirm(tool, args, preview) {
+  if (planMode) {
+    info(`⊘ ${tool} blocked — plan mode is on (/plan to exit)`);
+    return false;
+  }
   if (autoAccept) return true;
   const key = keyFor(tool, args);
   if (sessionAllow.has(key)) return true;
