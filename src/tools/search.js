@@ -72,38 +72,84 @@ export const grepSchema = {
   function: {
     name: "grep",
     description:
-      "Search file contents with a regex. Returns matching lines with file:line prefixes.",
+      "Search file contents with a regex. output_mode controls shape: 'content' (default, file:line:text), 'files_with_matches' (just paths), 'count' (path:N). Supports -A/-B/-C context (content mode), multiline, type filter, head_limit.",
     parameters: {
       type: "object",
       properties: {
         pattern: { type: "string" },
         path: { type: "string", description: "Defaults to '.'" },
         glob: { type: "string", description: "e.g. '*.ts'" },
+        type: { type: "string", description: "ripgrep file type (js, py, rust, ...)" },
         case_insensitive: { type: "boolean" },
+        output_mode: {
+          type: "string",
+          enum: ["content", "files_with_matches", "count"],
+          description: "Default 'content'.",
+        },
+        "-A": { type: "number", description: "Lines after each match (content mode)" },
+        "-B": { type: "number", description: "Lines before each match (content mode)" },
+        "-C": { type: "number", description: "Lines before and after each match (content mode)" },
+        multiline: { type: "boolean", description: "Pattern can span lines; '.' matches newline" },
+        head_limit: { type: "number", description: "Cap output to first N lines/entries" },
       },
       required: ["pattern"],
     },
   },
 };
 
-export async function grepRun({ pattern, path: p = ".", glob, case_insensitive }) {
+const applyHead = (out, limit) => {
+  if (!limit || limit <= 0) return out;
+  const lines = out.split("\n");
+  if (lines.length <= limit) return out;
+  return lines.slice(0, limit).join("\n") + `\n...[truncated, head_limit=${limit}]`;
+};
+
+export async function grepRun(params) {
+  const {
+    pattern,
+    path: p = ".",
+    glob,
+    type,
+    case_insensitive,
+    output_mode = "content",
+    multiline,
+    head_limit,
+  } = params;
+  const A = params["-A"], B = params["-B"], C = params["-C"];
+
   if (hasRg) {
-    const args = ["-n", "--no-heading"];
+    const args = [];
+    if (output_mode === "files_with_matches") args.push("-l");
+    else if (output_mode === "count") args.push("-c");
+    else args.push("-n", "--no-heading");
+
     if (case_insensitive) args.push("-i");
     if (glob) args.push("-g", glob);
+    if (type) args.push("-t", type);
+    if (multiline) args.push("-U", "--multiline-dotall");
+    if (output_mode === "content") {
+      if (C != null) args.push("-C", String(C));
+      if (A != null) args.push("-A", String(A));
+      if (B != null) args.push("-B", String(B));
+    }
     args.push(pattern, p);
-    return runRg(args);
+    const out = await runRg(args);
+    return { content: applyHead(out, head_limit), cacheDeps: [path.resolve(p)] };
   }
-  // Node fallback via fs.glob + regex scan
+
+  // Node fallback
   let re;
   try {
-    re = new RegExp(pattern, case_insensitive ? "i" : "");
+    const flags = (case_insensitive ? "i" : "") + (multiline ? "s" : "");
+    re = new RegExp(pattern, flags);
   } catch (e) {
     return `ERROR: invalid regex: ${e.message}`;
   }
   const absPath = path.resolve(p);
   const files = await listFiles(glob || "**/*", absPath);
-  const results = [];
+  const contentResults = [];
+  const fileMatches = new Map();
+
   for (const f of files) {
     let text;
     try {
@@ -111,14 +157,29 @@ export async function grepRun({ pattern, path: p = ".", glob, case_insensitive }
     } catch {
       continue;
     }
+    if (text.includes("\0")) continue; // skip binary
     const lines = text.split("\n");
+    let fileHits = 0;
     for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) results.push(`${f}:${i + 1}:${lines[i]}`);
-      if (results.length >= MAX_LINES) break;
+      if (re.test(lines[i])) {
+        fileHits++;
+        if (output_mode === "content") contentResults.push(`${f}:${i + 1}:${lines[i]}`);
+        if (contentResults.length >= MAX_LINES) break;
+      }
     }
-    if (results.length >= MAX_LINES) break;
+    if (fileHits) fileMatches.set(f, fileHits);
+    if (contentResults.length >= MAX_LINES) break;
   }
-  return results.length ? results.join("\n") : "(no matches)";
+
+  let out;
+  if (output_mode === "files_with_matches") {
+    out = [...fileMatches.keys()].join("\n") || "(no matches)";
+  } else if (output_mode === "count") {
+    out = [...fileMatches.entries()].map(([f, n]) => `${f}:${n}`).join("\n") || "(no matches)";
+  } else {
+    out = contentResults.length ? contentResults.join("\n") : "(no matches)";
+  }
+  return { content: applyHead(out, head_limit), cacheDeps: [absPath] };
 }
 
 // glob
@@ -140,6 +201,7 @@ export const globSchema = {
 
 export async function globRun({ pattern, path: p = "." }) {
   const files = await listFiles(pattern, p);
-  if (!files.length) return "(no matches)";
-  return files.slice(0, MAX_LINES).join("\n");
+  const abs = path.resolve(p);
+  if (!files.length) return { content: "(no matches)", cacheDeps: [abs] };
+  return { content: files.slice(0, MAX_LINES).join("\n"), cacheDeps: [abs] };
 }

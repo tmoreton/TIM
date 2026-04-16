@@ -4,30 +4,14 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { timPath, parseFrontmatter } from "./paths.js";
 
-const timDir = () => process.env.TIM_DIR || path.join(os.homedir(), ".tim");
-const knowledgeDir = () => path.join(timDir(), "knowledge");
+const knowledgeDir = () => timPath("knowledge");
 
 const ensureDir = (subPath = "") => {
   const dir = path.join(knowledgeDir(), subPath);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
-};
-
-const parseFrontmatter = (src) => {
-  const m = src.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!m) return { meta: {}, body: src.trim() };
-  const meta = {};
-  for (const line of m[1].split("\n")) {
-    const kv = line.match(/^(\w+):\s*(.*)$/);
-    if (!kv) continue;
-    let v = kv[2].trim();
-    if (v.startsWith("[") && v.endsWith("]"))
-      v = v.slice(1, -1).split(",").map((s) => s.trim()).filter(Boolean);
-    meta[kv[1]] = v;
-  }
-  return { meta, body: m[2].trim() };
 };
 
 // List all knowledge domains

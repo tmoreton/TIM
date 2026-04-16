@@ -25,9 +25,24 @@ const selfEditGuard = (abs) => {
 
 const resolveAny = (p) => path.resolve(process.cwd(), p);
 
-const readFiles = new Set();
+// Map<absPath, {mtimeMs, size}> — snapshot of file state at read time.
+// edit_file compares against this to detect external modifications (bash
+// sed, another editor, etc.) so the model doesn't clobber unseen changes.
+const readFiles = new Map();
 
-export const markRead = (absPath) => readFiles.add(absPath);
+const statOrNull = (abs) => {
+  try {
+    const s = fs.statSync(abs);
+    return { mtimeMs: s.mtimeMs, size: s.size };
+  } catch {
+    return null;
+  }
+};
+
+export const markRead = (absPath) => {
+  const s = statOrNull(absPath);
+  if (s) readFiles.set(absPath, s);
+};
 
 export function rehydrateReadsFromMessages(messages) {
   readFiles.clear();
@@ -38,37 +53,76 @@ export function rehydrateReadsFromMessages(messages) {
       if (name !== "read_file" && name !== "write_file") continue;
       try {
         const args = JSON.parse(tc.function.arguments || "{}");
-        if (args.path) readFiles.add(path.resolve(process.cwd(), args.path));
+        if (args.path) markRead(path.resolve(process.cwd(), args.path));
       } catch {}
     }
   }
 }
 
-const MAX_FILE_CHARS = 50_000;
-const MAX_FILE_LINES = 500;
+const MAX_FILE_CHARS = 200_000;
+const MAX_FILE_LINES = 2000;
 
 // list_files
 export const schema = {
   type: "function",
   function: {
     name: "list_files",
-    description: "List files and directories at a relative path.",
+    description:
+      "List files and directories at a relative path. Set recursive:true with depth to tree a directory in one call. Hidden files (dotfiles) excluded by default.",
     parameters: {
       type: "object",
       properties: {
         path: { type: "string", description: "Relative path. Defaults to '.'" },
+        recursive: { type: "boolean", description: "Walk subdirectories" },
+        depth: { type: "number", description: "Max recursion depth (default 3)" },
+        show_hidden: { type: "boolean", description: "Include dotfiles" },
       },
     },
   },
 };
 
-export async function run({ path: p = "." }) {
+const LIST_SKIP = new Set([
+  "node_modules", ".git", "dist", "build", ".next", ".venv",
+  "venv", "__pycache__", "target", "vendor", "coverage", ".cache",
+]);
+const MAX_LIST_ENTRIES = 1000;
+
+export async function run({ path: p = ".", recursive = false, depth = 3, show_hidden = false }) {
   const abs = resolveAny(p);
-  const entries = fs.readdirSync(abs, { withFileTypes: true });
-  return entries
-    .filter((e) => !e.name.startsWith("."))
-    .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-    .join("\n");
+
+  if (!recursive) {
+    const entries = fs.readdirSync(abs, { withFileTypes: true });
+    return {
+      content: entries
+        .filter((e) => show_hidden || !e.name.startsWith("."))
+        .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+        .join("\n"),
+      cacheDeps: [abs],
+    };
+  }
+
+  const lines = [];
+  const walk = (dir, rel, level) => {
+    if (lines.length >= MAX_LIST_ENTRIES) return;
+    if (level > depth) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!show_hidden && e.name.startsWith(".")) continue;
+      if (e.isDirectory() && LIST_SKIP.has(e.name)) continue;
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      lines.push(e.isDirectory() ? `${childRel}/` : childRel);
+      if (lines.length >= MAX_LIST_ENTRIES) return;
+      if (e.isDirectory()) walk(path.join(dir, e.name), childRel, level + 1);
+    }
+  };
+  walk(abs, "", 1);
+  const truncated = lines.length >= MAX_LIST_ENTRIES ? `\n...[truncated at ${MAX_LIST_ENTRIES} entries]` : "";
+  return { content: lines.join("\n") + truncated, cacheDeps: [abs] };
 }
 
 // read_file
@@ -99,12 +153,13 @@ export const readSchema = {
 export async function readRun({ path: p, offset = 0, limit }) {
   const abs = resolveAny(p);
   const content = fs.readFileSync(abs, "utf8");
-  readFiles.add(abs);
+  markRead(abs);
 
   const lines = content.split("\n");
   const totalLines = lines.length;
   const effectiveLimit = Math.min(limit || MAX_FILE_LINES, MAX_FILE_LINES);
 
+  let body;
   if (offset > 0 || totalLines > effectiveLimit) {
     const start = Math.min(offset, totalLines);
     const end = Math.min(start + effectiveLimit, totalLines);
@@ -115,17 +170,15 @@ export async function readRun({ path: p, offset = 0, limit }) {
       end < totalLines
         ? `\n...[${totalLines - end} more lines, use offset:${end} to continue]`
         : "";
-    return prefix + slice + suffix;
+    body = prefix + slice + suffix;
+  } else if (content.length > MAX_FILE_CHARS) {
+    body = content.slice(0, MAX_FILE_CHARS) +
+      `\n...[truncated ${content.length - MAX_FILE_CHARS} chars]`;
+  } else {
+    body = content;
   }
 
-  if (content.length > MAX_FILE_CHARS) {
-    return (
-      content.slice(0, MAX_FILE_CHARS) +
-      `\n...[truncated ${content.length - MAX_FILE_CHARS} chars]`
-    );
-  }
-
-  return content;
+  return { content: body, cacheDeps: [abs] };
 }
 
 // edit_file
@@ -148,12 +201,16 @@ export const editSchema = {
   },
 };
 
-export async function editRun({ path: p, old_string, new_string, replace_all = false }) {
+export async function editRun({ path: p, old_string, new_string, replace_all = false }, ctx = {}) {
   const abs = resolveAny(p);
   const blocked = selfEditGuard(abs);
   if (blocked) return blocked;
-  if (!readFiles.has(abs))
+  const readSnap = readFiles.get(abs);
+  if (!readSnap)
     return `ERROR: read_file ${p} before editing it.`;
+  const current = statOrNull(abs);
+  if (current && (current.mtimeMs !== readSnap.mtimeMs || current.size !== readSnap.size))
+    return `ERROR: ${p} was modified since you read it (mtime or size changed). read_file it again before editing.`;
   const original = fs.readFileSync(abs, "utf8");
 
   let updated;
@@ -177,6 +234,8 @@ export async function editRun({ path: p, old_string, new_string, replace_all = f
 
   snapshotFile(abs);
   fs.writeFileSync(abs, updated);
+  markRead(abs); // refresh mtime snapshot so subsequent edits don't false-positive
+  ctx.toolCache?.invalidatePath(abs);
   editDiff(old_string, new_string);
   return `Edited ${p}`;
 }
@@ -199,7 +258,7 @@ export const writeSchema = {
   },
 };
 
-export async function writeRun({ path: p, content }) {
+export async function writeRun({ path: p, content }, ctx = {}) {
   const abs = resolveAny(p);
   const blocked = selfEditGuard(abs);
   if (blocked) return blocked;
@@ -213,7 +272,8 @@ export async function writeRun({ path: p, content }) {
   snapshotFile(abs);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, content);
-  readFiles.add(abs);
+  markRead(abs);
+  ctx.toolCache?.invalidatePath(abs);
   writeDiff(content);
   return `Wrote ${content.length} bytes to ${p}`;
 }

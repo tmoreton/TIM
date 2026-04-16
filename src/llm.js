@@ -63,12 +63,60 @@ export const getModelCatalog = () =>
 
 // --- Request building ------------------------------------------------------
 
+// Anthropic models support prompt caching via `cache_control: ephemeral`
+// on message content blocks. OpenRouter passes this through to Anthropic.
+// Caching the system prompt alone cuts latency ~4x and cost ~10x on multi-
+// turn work. We mark two breakpoints: system + the last stable tool/assistant
+// message, so each turn reuses the full prior conversation.
+const isAnthropic = (model) =>
+  typeof model === "string" && /^anthropic\//.test(model);
+
+const withCacheControl = (content) => {
+  if (typeof content === "string") {
+    return [{ type: "text", text: content, cache_control: { type: "ephemeral" } }];
+  }
+  if (Array.isArray(content) && content.length) {
+    const copy = content.map((b) => ({ ...b }));
+    copy[copy.length - 1] = {
+      ...copy[copy.length - 1],
+      cache_control: { type: "ephemeral" },
+    };
+    return copy;
+  }
+  return content;
+};
+
+const injectAnthropicCache = (messages) => {
+  if (!messages?.length) return messages;
+  const out = messages.map((m) => ({ ...m }));
+  // System prompt: stable across the whole session.
+  if (out[0]?.role === "system") {
+    out[0] = { ...out[0], content: withCacheControl(out[0].content) };
+  }
+  // Last tool/assistant message before the final user turn: caches the
+  // bulk of the conversation so the incremental cost is just the new user msg.
+  for (let i = out.length - 1; i >= 1; i--) {
+    const m = out[i];
+    if (m.role === "tool" || m.role === "assistant") {
+      if (typeof m.content === "string" && m.content.length) {
+        out[i] = { ...m, content: withCacheControl(m.content) };
+      }
+      break;
+    }
+  }
+  return out;
+};
+
 const resolveRequest = (body) => {
   const { provider, model } = pickProvider(body.model);
+  const finalBody = { ...body, model };
+  if (isAnthropic(model) && provider === providers.openrouter) {
+    finalBody.messages = injectAnthropicCache(finalBody.messages);
+  }
   return {
     url: `${provider.baseUrl}/chat/completions`,
     headers: provider.headers(),
-    body: { ...body, model },
+    body: finalBody,
   };
 };
 

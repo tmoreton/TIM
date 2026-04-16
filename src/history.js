@@ -5,9 +5,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
-
-const timDir = () => process.env.TIM_DIR || path.join(os.homedir(), ".tim");
+import { timDir } from "./paths.js";
 
 // One timestamp per REPL session keeps related edits grouped together.
 const SESSION_STAMP = new Date().toISOString().replace(/[:.]/g, "-");

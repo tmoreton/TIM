@@ -70,16 +70,6 @@ export async function getToolSchemas() {
   return Object.values(all).map((t) => t.schema);
 }
 
-export async function getTool(name) {
-  const all = await getMergedTools();
-  return all[name];
-}
-
-export async function hasTool(name) {
-  const all = await getMergedTools();
-  return name in all;
-}
-
 // Force reload (after creating/editing custom tools, or after env changes).
 export async function refreshTools() {
   mergedTools = null;

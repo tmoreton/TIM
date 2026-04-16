@@ -3,8 +3,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { complete } from "../llm.js";
+import { timPath } from "../paths.js";
 
 export const requiredEnv = "OPENROUTER_API_KEY";
 
@@ -84,8 +84,7 @@ export async function run({ prompt, reference_images = [], quality = "flash", ou
     const dataUrl = extractImage(data?.choices?.[0]?.message);
     if (!dataUrl) return `ERROR: no image in response`;
 
-    const timDir = process.env.TIM_DIR || path.join(os.homedir(), ".tim");
-    const dir = path.join(timDir, "images");
+    const dir = timPath("images");
     fs.mkdirSync(dir, { recursive: true });
     const outPath = path.join(dir, `${slugify(output_name || prompt)}-${Date.now()}.png`);
     writeDataUrl(dataUrl, outPath);

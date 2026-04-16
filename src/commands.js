@@ -243,43 +243,27 @@ export async function runCommand(input) {
     case "agent": {
       const [agentName, ...taskParts] = arg.split(/\s+/);
       let task = taskParts.join(" ").trim();
-      
-      if (!agentName) {
-        error("usage: /agent <name> [task or file path]");
-        return;
-      }
-      
+      if (!agentName) return error("usage: /agent <name> [task or file path]");
       const profiles = loadAgents();
       const profile = profiles[agentName];
       if (!profile) {
         const known = Object.keys(profiles).join(", ") || "(none)";
-        error(`unknown agent "${agentName}". Available: ${known}`);
-        return;
+        return error(`unknown agent "${agentName}". Available: ${known}`);
       }
-      
-      // If task looks like a file path, read it
-      if (task && (task.startsWith("/") || task.startsWith("./") || task.startsWith("~"))) {
+      if (task && /^[/~]|^\.\//.test(task)) {
         const fs = await import("node:fs");
         const path = await import("node:path");
         const os = await import("node:os");
-        const resolved = task.startsWith("~") 
-          ? path.join(os.homedir(), task.slice(1)) 
-          : task;
+        const resolved = task.startsWith("~") ? path.join(os.homedir(), task.slice(1)) : task;
         try {
           task = fs.readFileSync(resolved, "utf8");
           info(`loaded script from ${resolved}`);
         } catch (e) {
-          error(`could not read file: ${e.message}`);
-          return;
+          return error(`could not read file: ${e.message}`);
         }
       }
-      
-      if (!task) {
-        error("please provide a task or file path for the agent");
-        return;
-      }
-      
-      ui.info(`→ running ${agentName} agent...`);
+      if (!task) return error("please provide a task or file path for the agent");
+      info(`→ running ${agentName} agent...`);
       const sub = await createAgent(profile);
       await sub.turn(task);
       const last = sub.state.messages
@@ -313,65 +297,49 @@ export async function runCommand(input) {
       else success("plan mode OFF — ask the model to proceed with the plan");
       return;
     }
-      case "tool": {
-      const args = arg.split(/\s+/);
-      const sub = args[0];
-      
+    case "tool": {
+      const [sub, name] = arg.split(/\s+/);
       if (!sub || sub === "list") {
         const custom = await listCustomToolNames();
         console.log();
         console.log("  " + c.bold(c.teal("custom tools")));
         if (custom.length) {
-          for (const name of custom) console.log(`  ${c.teal("•")} ${c.white(name)}`);
+          for (const n of custom) console.log(`  ${c.teal("•")} ${c.white(n)}`);
         } else {
           console.log(`  ${c.dim("(none — create one with /tool create <name>)")}`);
         }
         console.log();
         return;
       }
-      
       if (sub === "create") {
-        const name = args[1];
-        if (!name) { error("usage: /tool create <name>"); return; }
+        if (!name) return error("usage: /tool create <name>");
         ensureToolsDir();
-        const template = generateToolTemplate(name);
-        const p = writeToolSource(name, template);
+        const p = writeToolSource(name, generateToolTemplate(name));
         await reloadCustomTools();
         success(`created ${p}`);
         info("edit the file to implement your tool logic");
         return;
       }
-      
       if (sub === "edit") {
-        const name = args[1];
-        if (!name) { error("usage: /tool edit <name>"); return; }
-        const dir = getCustomToolsDir();
-        const p = `${dir}/${name}.js`;
-        const source = readToolSource(name);
-        if (!source) { error(`tool "${name}" not found at ${p}`); return; }
-        const editor = process.env.EDITOR || "vi";
+        if (!name) return error("usage: /tool edit <name>");
+        const p = `${getCustomToolsDir()}/${name}.js`;
+        if (!readToolSource(name)) return error(`tool "${name}" not found at ${p}`);
         const { spawnSync } = await import("node:child_process");
-        spawnSync(editor, [p], { stdio: "inherit" });
+        spawnSync(process.env.EDITOR || "vi", [p], { stdio: "inherit" });
         await reloadCustomTools();
         success(`reloaded ${name}`);
         return;
       }
-      
       if (sub === "delete") {
-        const name = args[1];
-        if (!name) { error("usage: /tool delete <name>"); return; }
-        const deleted = deleteTool(name);
-        if (!deleted) { error(`tool "${name}" not found`); return; }
+        if (!name) return error("usage: /tool delete <name>");
+        if (!deleteTool(name)) return error(`tool "${name}" not found`);
         success(`deleted ${name}`);
         return;
       }
-      
-      error("usage: /tool [list|create|edit|delete] <name>");
-      return;
+      return error("usage: /tool [list|create|edit|delete] <name>");
     }
     case "knowledge": {
       if (!arg) {
-        // List all domains
         const domains = listDomains();
         console.log();
         console.log("  " + c.bold(c.teal("knowledge domains")));
@@ -384,19 +352,13 @@ export async function runCommand(input) {
         info("use /knowledge <domain> to list files in a domain");
         return;
       }
-      
-      // List files in a domain
       const files = listKnowledge(arg);
-      if (!files.length) {
-        info(`no knowledge files in '${arg}' domain`);
-        return;
-      }
-      
+      if (!files.length) return info(`no knowledge files in '${arg}' domain`);
       console.log();
       console.log("  " + c.bold(c.teal(`knowledge: ${arg}`)));
-      const pad = Math.max(...files.map(f => f.name.length)) + 2;
+      const pad = Math.max(...files.map((f) => f.name.length)) + 2;
       for (const f of files) {
-        const auto = f.autoLoad ? c.yellow(" [auto-load]") : "";
+        const auto = f.load === "auto" ? c.yellow(" [auto-load]") : "";
         const tags = f.tags?.length ? c.dim(` ${f.tags.join(",")}`) : "";
         const desc = f.description ? c.dim(` — ${f.description}`) : "";
         console.log(`  ${c.teal("•")} ${c.white(f.name.padEnd(pad))}${auto}${tags}${desc}`);

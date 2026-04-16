@@ -76,6 +76,9 @@ export async function run({ command, timeout_ms = 120_000 }, ctx = {}) {
     child.on("close", (code) => {
       clearTimeout(timer);
       ctx.signal?.removeEventListener("abort", onAbort);
+      // Can't know what bash touched — blow away the whole tool cache so
+      // subsequent read_file/grep/glob see fresh disk state.
+      ctx.toolCache?.clear();
       const status = aborted
         ? "aborted by user"
         : timedOut

@@ -4,11 +4,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { pathToFileURL } from "node:url";
+import { timPath } from "../paths.js";
 
-const timDir = () => process.env.TIM_DIR || path.join(os.homedir(), ".tim");
-const toolsDir = () => path.join(timDir(), "tools");
+const toolsDir = () => timPath("tools");
 
 // Cache loaded tools
 let customToolsCache = null;

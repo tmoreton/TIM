@@ -10,7 +10,7 @@ import { loadProjectContext } from "./config.js";
 import { getInitialKnowledge, formatKnowledgeForContext } from "./knowledge.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
-import { complete, streamCompletion, Interrupted } from "./llm.js";
+import { stream, streamCompletion, Interrupted } from "./llm.js";
 import { ToolCache } from "./cache.js";
 import { isPlanMode } from "./permissions.js";
 import { isCwdTimSource } from "./paths.js";
@@ -76,6 +76,21 @@ const buildUserMessage = (text, attachments) => {
 
   return { role: "user", content };
 };
+
+// Tools with no side effects (and no user prompt) can run concurrently.
+// Everything else must stay serial: either it mutates disk/state, or it
+// shows a confirm() prompt that can't be interleaved.
+const PARALLEL_SAFE = new Set([
+  "read_file",
+  "list_files",
+  "grep",
+  "glob",
+  "web_fetch",
+  "web_search",
+  "list_knowledge",
+  "read_knowledge",
+]);
+const isParallelSafe = (name) => PARALLEL_SAFE.has(name);
 
 const DEFAULT_MODEL =
   process.env.TIM_MODEL || "accounts/fireworks/routers/kimi-k2p5-turbo";
@@ -201,7 +216,9 @@ You have tools: ${toolList}.
         }
 
         const pendingAttachments = [];
-        for (const call of message.tool_calls) {
+        const results = new Array(message.tool_calls.length);
+
+        const runOne = async (call, idx) => {
           if (signal?.aborted) throw new Interrupted();
           const { name, arguments: argStr } = call.function;
           let result;
@@ -216,26 +233,56 @@ You have tools: ${toolList}.
             if (result !== undefined) {
               ui.toolResult(`(cached) ${String(result).slice(0, 100)}`);
             } else {
-              result = await tool.run(args, { signal });
-              // Tools may return {content, attachImages} to inject a follow-up
-              // multimodal user message so the model sees what it produced.
+              const ctx = { signal, toolCache: state.toolCache };
+              result = await tool.run(args, ctx);
+              let cacheDeps;
               if (result && typeof result === "object" && !Array.isArray(result)) {
                 if (Array.isArray(result.attachImages))
                   pendingAttachments.push(...result.attachImages);
+                cacheDeps = result.cacheDeps;
                 result = result.content ?? "";
-              } else {
-                state.toolCache.set(name, args, result);
               }
-              if (String(result).startsWith("ERROR:")) ui.toolResult(result);
+              if (!String(result).startsWith("ERROR:")) {
+                state.toolCache.set(name, args, result, cacheDeps);
+              } else {
+                ui.toolResult(result);
+              }
             }
           } catch (e) {
             result = `ERROR: ${e.message}`;
             ui.toolResult(result);
           }
+          results[idx] = { call, content: String(result) };
+        };
+
+        // Batch reads together; run mutating/prompting tools one at a time.
+        // Preserves tool_call order in the final messages but pays only the
+        // slowest read in each batch instead of the sum.
+        let i = 0;
+        while (i < message.tool_calls.length) {
+          if (signal?.aborted) throw new Interrupted();
+          const startName = message.tool_calls[i].function.name;
+          if (isParallelSafe(startName)) {
+            const batch = [];
+            while (
+              i < message.tool_calls.length &&
+              isParallelSafe(message.tool_calls[i].function.name)
+            ) {
+              batch.push(runOne(message.tool_calls[i], i));
+              i++;
+            }
+            await Promise.all(batch);
+          } else {
+            await runOne(message.tool_calls[i], i);
+            i++;
+          }
+        }
+
+        for (const r of results) {
           state.messages.push({
             role: "tool",
-            tool_call_id: call.id,
-            content: String(result),
+            tool_call_id: r.call.id,
+            content: r.content,
           });
         }
 
@@ -278,8 +325,16 @@ You have tools: ${toolList}.
       ...middle,
     ];
 
-    const res = await complete({ model: state.model, messages: summaryPrompt });
-    const summary = res.choices[0].message.content;
+    let summary = "";
+    const spin = ui.spinner("compacting");
+    try {
+      for await (const chunk of stream({ model: state.model, messages: summaryPrompt })) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) summary += delta;
+      }
+    } finally {
+      spin.stop();
+    }
 
     state.messages = [
       system,
