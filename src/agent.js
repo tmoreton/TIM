@@ -39,7 +39,12 @@ const buildUserMessage = (text, attachments) => {
     return { role: "user", content: text };
   }
 
-  const content = [{ type: "text", text }];
+  // Surface the on-disk paths so the model can pass them to tools like
+  // generate_image (reference_images) or read_file. Without this the model
+  // only sees pixels/bytes and has no way to refer to the file by path.
+  const allPaths = [...attachments.images, ...attachments.pdfs];
+  const pathsNote = `[attached files: ${allPaths.join(", ")}]\n`;
+  const content = [{ type: "text", text: pathsNote + text }];
 
   for (const imgPath of attachments.images) {
     const base64 = encodeFile(imgPath);
@@ -207,7 +212,10 @@ You have tools: ${toolList}.
         if (pendingAttachments.length) {
           const noun = pendingAttachments.length > 1 ? "images" : "image";
           const content = [
-            { type: "text", text: `(generated ${noun} attached for review)` },
+            {
+              type: "text",
+              text: `(generated ${noun} attached for review: ${pendingAttachments.join(", ")})`,
+            },
           ];
           for (const p of pendingAttachments) {
             content.push({

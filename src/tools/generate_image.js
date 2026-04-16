@@ -10,7 +10,10 @@ import { providers } from "../providers.js";
 import { timPath } from "../paths.js";
 
 const OPENROUTER = providers.openrouter;
-const MODEL = "google/gemini-2.5-flash-image-preview";
+const MODELS = {
+  flash: "google/gemini-3.1-flash-image-preview",
+  pro: "google/gemini-3-pro-image-preview",
+};
 
 const MIME_BY_EXT = {
   ".png": "image/png",
@@ -64,7 +67,7 @@ export const generateImage = {
     function: {
       name: "generate_image",
       description:
-        "Generate an image from a text prompt using Google's nano-banana (gemini-2.5-flash-image-preview) via OpenRouter. Optionally pass reference_images (local paths) to edit or compose them. Saves the result to $TIM_DIR/images/ and returns the path. The generated image is also auto-attached so you can see it on the next turn.",
+        "Generate an image from a text prompt using Google's Gemini 3 image models via OpenRouter. Optionally pass reference_images (local paths) to edit or compose them. Saves the result to $TIM_DIR/images/ and returns the path. The generated image is also auto-attached so you can see it on the next turn.",
       parameters: {
         type: "object",
         properties: {
@@ -78,6 +81,12 @@ export const generateImage = {
             description:
               "Optional local file paths to use as references for editing, style, or composition.",
           },
+          quality: {
+            type: "string",
+            enum: ["flash", "pro"],
+            description:
+              "flash (default, fast, gemini-3.1-flash-image) or pro (slower, higher fidelity, gemini-3-pro-image).",
+          },
           output_name: {
             type: "string",
             description:
@@ -88,7 +97,8 @@ export const generateImage = {
       },
     },
   },
-  run: async ({ prompt, reference_images = [], output_name }, ctx = {}) => {
+  run: async ({ prompt, reference_images = [], quality = "flash", output_name }, ctx = {}) => {
+    const model = MODELS[quality] || MODELS.flash;
     try {
       const content = [{ type: "text", text: prompt }];
       for (const ref of reference_images) {
@@ -99,7 +109,7 @@ export const generateImage = {
         method: "POST",
         headers: OPENROUTER.headers(),
         body: JSON.stringify({
-          model: MODEL,
+          model,
           modalities: ["image", "text"],
           messages: [{ role: "user", content }],
         }),
