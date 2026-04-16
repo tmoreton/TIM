@@ -27,6 +27,7 @@ import {
   reloadCustomTools,
 } from "./tools/custom.js";
 import { listDomains, listKnowledge } from "./knowledge.js";
+import { getModelCatalog } from "./llm.js";
 
 const HELP_ROWS = [
   ["/help", "show this help"],
@@ -35,7 +36,7 @@ const HELP_ROWS = [
   ["/tool create <name>", "create new custom tool in ~/.tim/tools/"],
   ["/tool edit <name>", "edit custom tool in $EDITOR"],
   ["/tool delete <name>", "delete custom tool"],
-  ["/model [id]", "show or switch model"],
+  ["/model [id|#]", "list or switch model (alias: /models)"],
   ["/clear", "reset conversation (starts a new session)"],
   ["/context", "show whether TIM.md was loaded"],
   ["/compact", "summarize older messages to free context"],
@@ -125,12 +126,37 @@ export async function runCommand(input) {
       return;
     }
     case "model":
-      if (!arg) info(`model: ${await getModel()}`);
-      else {
-        await setModel(arg);
-        success(`model → ${arg}`);
+    case "models": {
+      const catalog = getModelCatalog();
+      const current = await getModel();
+      if (!arg) {
+        console.log();
+        console.log(`  ${c.bold(c.teal("current"))}  ${c.white(current)}`);
+        if (catalog.length) {
+          console.log();
+          console.log(`  ${c.bold(c.teal("quick-pick"))}`);
+          const pad = Math.max(...catalog.map((m) => m.id.length)) + 2;
+          for (const [i, m] of catalog.entries()) {
+            const marker = m.id === current ? c.teal(" ← current") : "";
+            console.log(
+              `  ${c.teal(String(i + 1).padStart(2))}. ${c.white(m.id.padEnd(pad))} ${c.dim(m.label)}${marker}`,
+            );
+          }
+        }
+        if (!process.env.OPENROUTER_API_KEY) {
+          console.log();
+          console.log(`  ${c.dim("set OPENROUTER_API_KEY to unlock more models")}`);
+        }
+        console.log();
+        info("switch by number (e.g. /model 2) or by ID (e.g. /model openrouter/anthropic/claude-sonnet-4.5)");
+        return;
       }
+      const n = Number(arg);
+      const target = Number.isInteger(n) && n >= 1 && n <= catalog.length ? catalog[n - 1].id : arg;
+      await setModel(target);
+      success(`model → ${target}`);
       return;
+    }
     case "clear":
       await resetMessages();
       success("conversation cleared — new session");
