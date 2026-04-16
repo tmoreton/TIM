@@ -1,47 +1,10 @@
 // Terminal UI utilities: colors, banner, markdown rendering, spinners, diff display.
 // All output functions handle non-TTY gracefully (no escape codes).
 
-import readline from "node:readline";
-
 const SUPPORTS = process.stdout.isTTY && process.env.TERM !== "dumb";
 
 const ESC = "\x1b[";
 const RESET = `${ESC}0m`;
-
-// --- Persistent input preserving async output ------------------------------
-// writeAbove clears whatever readline has drawn on the current line, emits
-// `str`, then asks readline to redraw the prompt + current input buffer so
-// anything the user typed during streaming stays visible.
-
-let _rl = null;
-export const setReadline = (rl) => {
-  _rl = rl;
-};
-
-// Redraw the prompt + input buffer at the current cursor position. We reset
-// prevRows to 0 so readline only clears the current line downward and never
-// reaches back up into output we already wrote.
-const redrawInputLine = () => {
-  if (!_rl) return;
-  _rl.prevRows = 0;
-  _rl._refreshLine?.();
-};
-
-export function writeAbove(str) {
-  if (!_rl || !SUPPORTS) {
-    process.stdout.write(str);
-    return;
-  }
-  readline.cursorTo(process.stdout, 0);
-  readline.clearLine(process.stdout, 0);
-  process.stdout.write(str);
-  redrawInputLine();
-}
-
-// console.log-style helper that always terminates with a newline.
-export function log(str = "") {
-  writeAbove(str + "\n");
-}
 
 const codes = {
   reset: 0,
@@ -97,21 +60,21 @@ const START = [13, 148, 136]; // deep teal (teal-600)
 const END = [94, 234, 212]; // bright aqua (teal-300)
 
 export function banner(model, cwd) {
-  log();
-  for (const line of BANNER) log("  " + gradient(line, START, END));
-  log();
-  log(
+  console.log();
+  for (const line of BANNER) console.log("  " + gradient(line, START, END));
+  console.log();
+  console.log(
     "  " +
       gradient("the minimalist coding companion", START, END),
   );
-  log();
-  log("  " + c.dim(`model   `) + c.white(model));
-  log("  " + c.dim(`cwd     `) + c.white(cwd));
-  log(
+  console.log();
+  console.log("  " + c.dim(`model   `) + c.white(model));
+  console.log("  " + c.dim(`cwd     `) + c.white(cwd));
+  console.log(
     "  " +
       c.dim(`hint    /help for commands · Ctrl+C to interrupt`),
   );
-  log();
+  console.log();
 }
 
 // --- Markdown renderer (line-based, streaming-friendly) -------------------
@@ -187,46 +150,18 @@ const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "
 export function spinner(label = "thinking") {
   if (!SUPPORTS) return { stop() {} };
   let i = 0;
-  let rendered = false;
-
-  const interactiveRender = () => {
-    const frame = `${c.teal(FRAMES[i++ % FRAMES.length])} ${c.dim(label)}`;
-    if (rendered) {
-      // Move cursor up to the previously-rendered spinner line.
-      process.stdout.write(`${ESC}1A`);
-    }
-    readline.cursorTo(process.stdout, 0);
-    readline.clearLine(process.stdout, 0);
-    // Spinner line, then newline, then readline redraws prompt + buffer below.
-    process.stdout.write(frame + "\n");
-    rendered = true;
-    redrawInputLine();
-  };
-
-  const plainRender = () => {
+  const render = () => {
     process.stdout.write(
       `\r${c.teal(FRAMES[i++ % FRAMES.length])} ${c.dim(label)}${ESC}K`,
     );
   };
-
-  const render = () => (_rl ? interactiveRender() : plainRender());
-
   process.stdout.write(`${ESC}?25l`);
   render();
   const id = setInterval(render, 80);
   return {
     stop() {
       clearInterval(id);
-      if (_rl && rendered) {
-        // Wipe the reserved spinner line, leave cursor there, redraw input.
-        process.stdout.write(`${ESC}1A`);
-        readline.cursorTo(process.stdout, 0);
-        readline.clearLine(process.stdout, 0);
-        process.stdout.write(`${ESC}?25h`);
-        redrawInputLine();
-      } else {
-        process.stdout.write(`\r${ESC}K${ESC}?25h`);
-      }
+      process.stdout.write(`\r${ESC}K${ESC}?25h`);
     },
   };
 }
@@ -250,20 +185,20 @@ const summarizeArgs = (name, args) => {
 };
 
 export function toolCall(name, args) {
-  log(`${ARROW} ${c.bold(name)} ${c.dim(summarizeArgs(name, args))}`);
+  console.log(`${ARROW} ${c.bold(name)} ${c.dim(summarizeArgs(name, args))}`);
 }
 
 export function toolResult(result) {
   const s = String(result);
   if (s.startsWith("ERROR:")) {
-    log(`${RETURN} ${c.red(s.split("\n")[0])}`);
+    console.log(`${RETURN} ${c.red(s.split("\n")[0])}`);
     return;
   }
   const lines = s.split("\n");
   const first = (lines[0] || "").slice(0, 100);
   const suffix =
     lines.length > 1 ? c.dim(` (+${lines.length - 1} lines)`) : "";
-  log(`${RETURN} ${c.dim(first)}${suffix}`);
+  console.log(`${RETURN} ${c.dim(first)}${suffix}`);
 }
 
 const MAX_DIFF_LINES = 20;
@@ -271,13 +206,13 @@ const DIFF_CONTEXT = 2;
 
 const printDiffBlock = (lines, sign, color) => {
   const shown = lines.slice(0, MAX_DIFF_LINES);
-  for (const l of shown) log(`     ${c[color](sign)} ${c[color](l)}`);
+  for (const l of shown) console.log(`     ${c[color](sign)} ${c[color](l)}`);
   if (lines.length > MAX_DIFF_LINES)
-    log(c.dim(`     ... (+${lines.length - MAX_DIFF_LINES} more)`));
+    console.log(c.dim(`     ... (+${lines.length - MAX_DIFF_LINES} more)`));
 };
 
 const printContext = (lines) => {
-  for (const l of lines) log(c.dim(`       ${l}`));
+  for (const l of lines) console.log(c.dim(`       ${l}`));
 };
 
 export function editDiff(oldStr, newStr) {
@@ -302,7 +237,7 @@ export function editDiff(oldStr, newStr) {
   const newChanged = newLines.slice(prefix, newLines.length - suffix);
 
   if (oldChanged.length === 0 && newChanged.length === 0) {
-    log(c.dim("     (no effective change)"));
+    console.log(c.dim("     (no effective change)"));
     return;
   }
 
@@ -335,13 +270,13 @@ export function statusFooter({ lastPromptTokens, limit, sessionId, model }) {
   if (sessionId) parts.push(c.dim(`tim --resume ${sessionId}`));
   if (model) parts.push(c.dim(model));
   if (!parts.length) return;
-  log(c.dim("  ─ ") + parts.join(c.dim(" · ")));
+  console.log(c.dim("  ─ ") + parts.join(c.dim(" · ")));
 }
 
 export function warn(tool, preview) {
-  log();
-  log(`  ${c.yellow("⚠")}  ${c.bold(tool)} ${c.dim("wants to run:")}`);
-  log(`     ${c.white(preview)}`);
+  console.log();
+  console.log(`  ${c.yellow("⚠")}  ${c.bold(tool)} ${c.dim("wants to run:")}`);
+  console.log(`     ${c.white(preview)}`);
 }
 
 export function confirmPrompt() {
@@ -350,14 +285,14 @@ export function confirmPrompt() {
 
 // --- Misc ------------------------------------------------------------------
 
-export const info = (msg) => log(c.dim(`  ${msg}`));
-export const error = (msg) => log(c.red(`  ✗ ${msg}`));
-export const success = (msg) => log(c.green(`  ✓ ${msg}`));
+export const info = (msg) => console.log(c.dim(`  ${msg}`));
+export const error = (msg) => console.log(c.red(`  ✗ ${msg}`));
+export const success = (msg) => console.log(c.green(`  ✓ ${msg}`));
 
 export function exitHint(sessionId) {
   if (!sessionId) return;
-  log();
-  log(c.dim("  resume with:"));
-  log(`    ${c.teal(`tim --resume ${sessionId}`)}`);
-  log();
+  console.log();
+  console.log(c.dim("  resume with:"));
+  console.log(`    ${c.teal(`tim --resume ${sessionId}`)}`);
+  console.log();
 }

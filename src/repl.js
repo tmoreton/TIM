@@ -239,7 +239,6 @@ export async function startRepl(initialAttachments = null) {
     prompt: ui.prompt(),
   });
   setReadline(rl);
-  ui.setReadline(rl);
 
   // readline auto-closes on SIGINT unless the interface has its own listener
   process.on("SIGINT", handleSigint);

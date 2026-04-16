@@ -10,6 +10,7 @@ import { loadCustomTools, reloadCustomTools } from "./custom.js";
 
 import * as webFetch from "./web_fetch.js";
 import * as knowledge from "./knowledge.js";
+import * as email from "./email.js";
 
 // Core built-in tools (universal, no external API keys)
 const coreTools = {
@@ -26,6 +27,9 @@ const coreTools = {
   read_knowledge: { schema: knowledge.readKnowledgeSchema, run: knowledge.readKnowledgeRun },
   write_knowledge: { schema: knowledge.writeKnowledgeSchema, run: knowledge.writeKnowledgeRun },
   append_knowledge: { schema: knowledge.appendKnowledgeSchema, run: knowledge.appendKnowledgeRun },
+  notify_email: { schema: email.notifyEmailSchema, run: email.notifyEmailRun },
+  receive_email: { schema: email.receiveEmailSchema, run: email.receiveEmailRun },
+  create_email_inbox: { schema: email.createInboxSchema, run: email.createInboxRun },
 };
 
 // Merged tools (core + custom)

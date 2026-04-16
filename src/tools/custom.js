@@ -32,14 +32,15 @@ export function ensureToolsDir() {
 
 export async function loadCustomTools() {
   if (customToolsCache) return customToolsCache;
-  
+
   const dir = toolsDir();
   const tools = {};
   const skipped = [];
-  
+
   try {
     const files = fs.readdirSync(dir).filter(f => f.endsWith(".js"));
-    
+    if (files.length) ensurePackageJson();
+
     for (const file of files) {
       const fullPath = path.join(dir, file);
       const name = path.basename(file, ".js");

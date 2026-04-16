@@ -43,10 +43,24 @@ const HELP_ROWS = [
   ["/agents", "list available sub-agent profiles"],
   ["/agent <name> [task/file]", "run a sub-agent directly"],
   ["/knowledge [domain]", "list knowledge domains, or files in a domain"],
-  ["/env", "manage $TIM_DIR/.env (list | set KEY=VAL | unset KEY)"],
+  ["/env", "manage $TIM_DIR/.env (list | set KEY=VAL | unset KEY | email)"],
   ["/yolo", "toggle auto-accept for edits and bash (USE WITH CARE)"],
   ["/plan", "toggle plan mode — model drafts a plan, no edits/bash run"],
   ["/exit", "quit"],
+];
+
+const EMAIL_ENV_HELP = [
+  ["AGENTMAIL_API_KEY", "AgentMail API key for send + receive (recommended)"],
+  ["AGENTMAIL_INBOX_ID", "Default AgentMail inbox (send from + receive to)"],
+  ["AGENTMAIL_WHITELIST", "Allowed sender emails/domains for incoming (required)"],
+  ["RESEND_API_KEY", "Resend API for sending only"],
+  ["RESEND_FROM", "Default sender for Resend emails"],
+  ["SMTP_HOST", "SMTP server hostname (fallback)"],
+  ["SMTP_USER", "SMTP username"],
+  ["SMTP_PASS", "SMTP password"],
+  ["SMTP_PORT", "SMTP port (default: 587)"],
+  ["SMTP_SECURE", "Force TLS (default: true for port 465)"],
+  ["SMTP_FROM", "Default sender for SMTP emails"],
 ];
 
 const INPUT_ROWS = [
@@ -170,7 +184,20 @@ export async function runCommand(input) {
         success(`unset ${kv.trim()}`);
         return;
       }
-      return error("usage: /env [list | set KEY=VAL | unset KEY]");
+      if (sub === "email") {
+        console.log();
+        console.log("  " + c.bold(c.teal("email configuration")));
+        console.log("  " + c.dim("Sending: RESEND_API_KEY (recommended) or SMTP_* vars"));
+        console.log("  " + c.dim("Receiving: AGENTMAIL_API_KEY + AGENTMAIL_WHITELIST (required)"));
+        console.log();
+        const pad = Math.max(...EMAIL_ENV_HELP.map((r) => r[0].length)) + 2;
+        for (const [k, v] of EMAIL_ENV_HELP) {
+          console.log(`  ${c.teal(k.padEnd(pad))} ${c.dim(v)}`);
+        }
+        console.log();
+        return;
+      }
+      return error("usage: /env [list | set KEY=VAL | unset KEY | email]");
     }
     case "agents": {
       const profiles = Object.values(loadAgents());

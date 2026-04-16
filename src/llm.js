@@ -195,11 +195,11 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
   const flushLines = (final = false) => {
     let idx;
     while ((idx = lineBuf.indexOf("\n")) !== -1) {
-      ui.writeAbove("  " + ui.renderMarkdownLine(lineBuf.slice(0, idx)) + "\n");
+      process.stdout.write("  " + ui.renderMarkdownLine(lineBuf.slice(0, idx)) + "\n");
       lineBuf = lineBuf.slice(idx + 1);
     }
     if (final && lineBuf) {
-      ui.writeAbove("  " + ui.renderMarkdownLine(lineBuf) + "\n");
+      process.stdout.write("  " + ui.renderMarkdownLine(lineBuf) + "\n");
       lineBuf = "";
     }
   };
@@ -216,7 +216,7 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
       if (delta.content) {
         if (!started) {
           spin.stop();
-          ui.writeAbove(`\n${ui.header()}\n`);
+          process.stdout.write(`\n${ui.header()}\n`);
           started = true;
         }
         lineBuf += delta.content;
@@ -240,7 +240,7 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
     flushLines(true);
   }
 
-  if (started) ui.writeAbove("\n");
+  if (started) process.stdout.write("\n");
   const toolCalls = toolAcc.filter(Boolean);
 
   if (responseUsage) {
