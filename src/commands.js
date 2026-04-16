@@ -57,8 +57,6 @@ const EMAIL_ENV_HELP = [
   ["AGENTMAIL_API_KEY", "AgentMail API key for send + receive (recommended)"],
   ["AGENTMAIL_INBOX_ID", "Default AgentMail inbox (send from + receive to)"],
   ["AGENTMAIL_WHITELIST", "Allowed sender emails/domains for incoming (required)"],
-  ["RESEND_API_KEY", "Resend API for sending only"],
-  ["RESEND_FROM", "Default sender for Resend emails"],
   ["SMTP_HOST", "SMTP server hostname (fallback)"],
   ["SMTP_USER", "SMTP username"],
   ["SMTP_PASS", "SMTP password"],
@@ -233,7 +231,7 @@ export async function runCommand(input) {
       if (sub === "email") {
         console.log();
         console.log("  " + c.bold(c.teal("email configuration")));
-        console.log("  " + c.dim("Sending: RESEND_API_KEY (recommended) or SMTP_* vars"));
+        console.log("  " + c.dim("Sending: AGENTMAIL_API_KEY (recommended) or SMTP_* vars"));
         console.log("  " + c.dim("Receiving: AGENTMAIL_API_KEY + AGENTMAIL_WHITELIST (required)"));
         console.log();
         const pad = Math.max(...EMAIL_ENV_HELP.map((r) => r[0].length)) + 2;

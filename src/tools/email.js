@@ -1,5 +1,5 @@
 // Email tool - unified email sending and receiving for agents
-// Supports: AgentMail (bidirectional), Resend API, and Custom SMTP (zero-dep fallback)
+// Supports: AgentMail (bidirectional) and SMTP (zero-dep fallback)
 
 import { sendMail as sendSmtpMail, smtpConfig as getSmtpConfig } from "../smtp.js";
 
@@ -9,7 +9,7 @@ export const notifyEmailSchema = {
   type: "function",
   function: {
     name: "notify_email",
-    description: "Send email via AgentMail, Resend, or SMTP. Renders markdown body to HTML. Supports file attachments (images show inline via ![alt](cid:filename.png)) and in-thread replies via reply_to.",
+    description: "Send email via AgentMail or SMTP. Renders markdown body to HTML. Supports file attachments (images show inline via ![alt](cid:filename.png)) and in-thread replies via reply_to.",
     parameters: {
       type: "object",
       properties: {
@@ -138,52 +138,6 @@ function readAttachments(filePaths = []) {
   });
 }
 
-// ============== RESEND IMPLEMENTATION ==============
-
-async function sendViaResend({ to, cc, subject, text, html, attachments = [], replyTo }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("RESEND_API_KEY not set");
-
-  const from = process.env.RESEND_FROM || "onboarding@resend.dev";
-  const recipients = Array.isArray(to) ? to : [to];
-  const ccList = cc || [];
-
-  const payload = {
-    from,
-    to: recipients,
-    subject,
-    text,
-    html,
-  };
-  if (ccList.length > 0) payload.cc = ccList;
-  if (attachments.length) {
-    payload.attachments = attachments.map(a => ({
-      filename: a.filename,
-      content: a.content,
-      content_id: a.cid,       // enables cid: inline refs in HTML
-    }));
-  }
-  if (replyTo) {
-    payload.headers = { ...(payload.headers || {}), "In-Reply-To": `<${replyTo}>`, "References": `<${replyTo}>` };
-  }
-
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Resend error: ${res.status} - ${err}`);
-  }
-
-  return await res.json();
-}
-
 // ============== SMTP IMPLEMENTATION ==============
 
 async function sendViaSmtp({ to, cc, subject, text, html, attachments = [], replyTo }) {
@@ -287,10 +241,6 @@ export async function notifyEmailRun(args) {
     });
     const thread = replyTo ? " (in-thread reply)" : "";
     return `Email sent via AgentMail${thread} from ${process.env.AGENTMAIL_INBOX_ID}. ID: ${result.id}`;
-  }
-  if (process.env.RESEND_API_KEY) {
-    const result = await sendViaResend({ to, cc, subject, text, html, attachments, replyTo });
-    return `Email sent via Resend. ID: ${result.id}`;
   }
   await sendViaSmtp({ to, cc, subject, text, html, attachments, replyTo });
   return `Email sent via SMTP to ${Array.isArray(to) ? to.join(", ") : to}`;
