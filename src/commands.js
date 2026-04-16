@@ -236,8 +236,8 @@ export async function runCommand(input) {
         info("no agents found — run: tim agent new");
         return;
       }
-      const directors = profiles.filter(p => p.role === "director");
-      const workers   = profiles.filter(p => p.role === "worker");
+      const directors = profiles.filter(p => p.role === "agent");
+      const workers   = profiles.filter(p => p.role === "workflow");
       const pad = Math.max(...profiles.map((p) => p.name.length)) + 2;
       const printGroup = (label, list) => {
         if (!list.length) return;
@@ -250,8 +250,8 @@ export async function runCommand(input) {
         console.log();
       };
       console.log();
-      printGroup("directors", directors);
-      printGroup("workers", workers);
+      printGroup("agents", directors);
+      printGroup("workflows", workers);
       info("create: tim agent new  •  edit: tim agent edit <name>  •  run: tim run <name> \"task\"");
       return;
     }

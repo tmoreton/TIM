@@ -52,7 +52,7 @@ if (argv[0] === "agent") {
       const pad = Math.max(...agents.map(a => a.name.length)) + 2;
       console.log();
       for (const a of agents) {
-        const role = a.role === "director" ? " [director]" : " [worker]";
+        const role = a.role === "agent" ? " [agent]" : " [workflow]";
         const prod = a.produces ? ` → ${a.produces.domain}/${a.produces.name}` : "";
         console.log(`  ${a.name.padEnd(pad)} ${role}${prod}  ${a.description}`);
       }
@@ -80,8 +80,8 @@ if (argv[0] === "agent") {
     }
 
     const description = await ask("What does it do? (one line)", "");
-    const roleInput   = await ask("Role — director (orchestrates) or worker (single task)", "worker");
-    const role        = roleInput.startsWith("d") ? "director" : "worker";
+    const roleInput   = await ask("Role — agent (orchestrates workflows) or workflow (single task)", "workflow");
+    const role        = roleInput.startsWith("a") ? "agent" : "workflow";
     const domain      = await ask("Knowledge domain (e.g. youtube, twitter, user — or leave blank)", "");
     let produces      = "";
     if (role === "worker") {
@@ -90,9 +90,9 @@ if (argv[0] === "agent") {
     const toolsInput  = await ask("Tools (comma-separated, or 'all')", "all");
     const tools       = toolsInput === "all" ? "all" : toolsInput;
 
-    const defaultPrompt = role === "director"
-      ? `You are a ${agentName} director agent.\n\nWhen given a task:\n1. Read relevant knowledge.\n2. Dispatch workers via spawn_agent.\n3. Read back knowledgeRefs from workers.\n4. Synthesize and deliver results.\n`
-      : `You are a ${agentName} worker agent.\n\nGiven a task, complete it and return a concise markdown summary.\nYour output will be written to knowledge automatically — do not call write_knowledge yourself.\n`;
+    const defaultPrompt = role === "agent"
+      ? `You are the ${agentName} agent.\n\nWhen given a task:\n1. Read relevant knowledge.\n2. Dispatch workflows via spawn_agent.\n3. Read back knowledgeRefs from workflows.\n4. Synthesize and deliver results.\n`
+      : `You are the ${agentName} workflow.\n\nGiven a task, complete it and return a concise markdown summary.\nYour output will be written to knowledge automatically — do not call write_knowledge yourself.\n`;
 
     const systemPrompt = await ask("Brief system prompt (or press enter for a starter template)", defaultPrompt);
 

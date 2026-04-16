@@ -100,17 +100,16 @@ const COMPACT_THRESHOLD = 0.6;
 
 // --- Agent factory ---------------------------------------------------------
 
-// Directors need these by default to orchestrate — so a director profile
-// with `tools: [bash, notify_email]` still gets spawn_agent + knowledge reads.
-const DIRECTOR_BASE_TOOLS = ["spawn_agent", "list_knowledge", "read_knowledge"];
+// Agents always get these tools so orchestration works even when tools: [...] is set.
+const AGENT_BASE_TOOLS = ["spawn_agent", "list_knowledge", "read_knowledge"];
 
 export async function createAgent(profile = null) {
   const allTools = await getTools();
   const allSchemas = await getToolSchemas();
 
   let toolAllowlist = profile?.tools;
-  if (toolAllowlist && profile?.role === "director") {
-    toolAllowlist = Array.from(new Set([...toolAllowlist, ...DIRECTOR_BASE_TOOLS]));
+  if (toolAllowlist && profile?.role === "agent") {
+    toolAllowlist = Array.from(new Set([...toolAllowlist, ...AGENT_BASE_TOOLS]));
   }
 
   const tools = toolAllowlist
@@ -157,20 +156,20 @@ history dir, read_file the snapshot you want, and write_file it back.`;
     const autoKnowledge = knowledgeDomain ? getInitialKnowledge(knowledgeDomain, knowledgeRefs) : [];
     const knowledgeSection = formatKnowledgeForContext(autoKnowledge);
 
-    const directorPreamble = profile?.role === "director"
-      ? `\n\n## Orchestration (you are a director)
-- Your workers are other agents you dispatch via spawn_agent. Each call returns
-  a JSON string with {summary, knowledgeRef, fullText}. When knowledgeRef is set,
-  read_knowledge on that ref for the full output instead of relying on summary.
+    const agentPreamble = profile?.role === "agent"
+      ? `\n\n## Orchestration (you are an agent)
+- Workflows are specialised sub-agents you dispatch via spawn_agent. Each call
+  returns a JSON string with {summary, knowledgeRef, fullText}. When knowledgeRef
+  is set, read_knowledge on that ref for the full output instead of relying on summary.
 - Durable facts (user goals, preferences, recurring context) live in the
   knowledge base. Read before you plan; write (write_knowledge / append_knowledge)
   when you learn something worth keeping across runs.
-- Work iteratively: dispatch a worker, read its knowledge output, decide the next
-  step, dispatch again. Don't try to plan everything upfront.`
+- Work iteratively: dispatch a workflow, read its knowledge output, decide the
+  next step, dispatch again. Don't try to plan everything upfront.`
       : "";
 
     if (profile?.systemPrompt) {
-      return `${profile.systemPrompt}${directorPreamble}${knowledgeSection}\n\nYou are running in ${process.cwd()}. Available tools: ${toolList}.${paths}${selfEdit}${customizations}`;
+      return `${profile.systemPrompt}${agentPreamble}${knowledgeSection}\n\nYou are running in ${process.cwd()}. Available tools: ${toolList}.${paths}${selfEdit}${customizations}`;
     }
     const base = `You are tim, a minimal coding assistant running in ${process.cwd()}.
 You have tools: ${toolList}.

@@ -64,7 +64,7 @@ export function loadAgents() {
         tools: Array.isArray(meta.tools) ? meta.tools : null, // null = all
         knowledgeDomain: meta.knowledgeDomain || null,
         knowledgeRefs: Array.isArray(meta.knowledgeRefs) ? meta.knowledgeRefs : null,
-        role: meta.role === "director" ? "director" : "worker",
+        role: meta.role === "agent" ? "agent" : "workflow",
         produces,
         systemPrompt: body,
         source: full,
