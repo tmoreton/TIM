@@ -22,6 +22,8 @@ const selfEditGuard = (abs) => {
   return `ERROR: refusing to modify tim source from outside the tim directory (${TIM_SOURCE_ROOT}). cd into it first if you really mean to edit tim itself.`;
 };
 
+// Writes are confined to the workspace so the model can't accidentally
+// clobber files elsewhere (~/.ssh/config, system configs, etc).
 const resolveSafe = (p) => {
   const cwd = process.cwd();
   const abs = path.resolve(cwd, p);
@@ -29,6 +31,9 @@ const resolveSafe = (p) => {
     throw new Error(`Path outside workspace: ${p}`);
   return abs;
 };
+
+// Reads are unrestricted — model can inspect anything the user's process can.
+const resolveAny = (p) => path.resolve(process.cwd(), p);
 
 const readFiles = new Set();
 
@@ -68,7 +73,7 @@ export const schema = {
 };
 
 export async function run({ path: p = "." }) {
-  const abs = resolveSafe(p);
+  const abs = resolveAny(p);
   const entries = fs.readdirSync(abs, { withFileTypes: true });
   return entries
     .filter((e) => !e.name.startsWith("."))
@@ -102,7 +107,7 @@ export const readSchema = {
 };
 
 export async function readRun({ path: p, offset = 0, limit }) {
-  const abs = resolveSafe(p);
+  const abs = resolveAny(p);
   const content = fs.readFileSync(abs, "utf8");
   readFiles.add(abs);
 
