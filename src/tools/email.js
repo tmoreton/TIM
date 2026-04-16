@@ -9,7 +9,7 @@ export const notifyEmailSchema = {
   type: "function",
   function: {
     name: "notify_email",
-    description: "Send email via AgentMail (if AGENTMAIL_API_KEY+AGENTMAIL_INBOX_ID set), Resend API, or custom SMTP. Renders markdown body to HTML with text fallback. Priority: AgentMail > Resend > SMTP.",
+    description: "Send email via AgentMail (if AGENTMAIL_API_KEY+AGENTMAIL_INBOX_ID set), Resend API, or custom SMTP. Renders markdown body to HTML with text fallback. Priority: AgentMail > Resend > SMTP. Supports file attachments — images show inline in the email body when referenced as ![alt](cid:filename.png) in the markdown body.",
     parameters: {
       type: "object",
       properties: {
@@ -25,7 +25,12 @@ export const notifyEmailSchema = {
           description: "CC recipients"
         },
         subject: { type: "string" },
-        body: { type: "string", description: "Email body in markdown (will be rendered to HTML with text fallback)" },
+        body: { type: "string", description: "Email body in markdown. Reference attached images inline with ![alt](cid:filename.png)." },
+        attachments: {
+          type: "array",
+          items: { type: "string" },
+          description: "Local file paths to attach. Images referenced as cid:<filename> in the body will display inline."
+        },
       },
       required: ["to", "subject", "body"],
     },
@@ -91,6 +96,8 @@ function markdownToHtml(md) {
     .replace(/^# (.*$)/gim, "<h1>$1</h1>")
     .replace(/\*\*(.*)\*\*/gim, "<b>$1</b>")
     .replace(/\*(.*)\*/gim, "<i>$1</i>")
+    // Images before links (more specific pattern first)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<img src="$2" alt="$1" style="max-width:100%;display:block;margin:8px 0">')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>')
     .replace(/```\n?([\s\S]*?)```/gm, "<pre><code>$1</code></pre>")
     .replace(/`([^`]+)`/gim, "<code>$1</code>")
@@ -106,14 +113,34 @@ function markdownToText(md) {
     .replace(/[*_]/g, "");
 }
 
+// ============== ATTACHMENT HELPERS ==============
+
+import fs from "node:fs";
+import path from "node:path";
+
+const MIME_BY_EXT = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+  ".gif": "image/gif", ".webp": "image/webp", ".pdf": "application/pdf",
+};
+
+function readAttachments(filePaths = []) {
+  return filePaths.map(fp => {
+    const abs = path.resolve(fp);
+    if (!fs.existsSync(abs)) throw new Error(`attachment not found: ${fp}`);
+    const filename = path.basename(abs);
+    const contentType = MIME_BY_EXT[path.extname(abs).toLowerCase()] || "application/octet-stream";
+    const content = fs.readFileSync(abs).toString("base64");
+    return { filename, contentType, content, cid: filename };
+  });
+}
+
 // ============== RESEND IMPLEMENTATION ==============
 
-async function sendViaResend({ to, cc, subject, text, html }) {
+async function sendViaResend({ to, cc, subject, text, html, attachments = [] }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY not set");
 
   const from = process.env.RESEND_FROM || "onboarding@resend.dev";
-
   const recipients = Array.isArray(to) ? to : [to];
   const ccList = cc || [];
 
@@ -124,9 +151,13 @@ async function sendViaResend({ to, cc, subject, text, html }) {
     text,
     html,
   };
-
-  if (ccList.length > 0) {
-    payload.cc = ccList;
+  if (ccList.length > 0) payload.cc = ccList;
+  if (attachments.length) {
+    payload.attachments = attachments.map(a => ({
+      filename: a.filename,
+      content: a.content,
+      content_id: a.cid,       // enables cid: inline refs in HTML
+    }));
   }
 
   const res = await fetch("https://api.resend.com/emails", {
@@ -148,10 +179,9 @@ async function sendViaResend({ to, cc, subject, text, html }) {
 
 // ============== SMTP IMPLEMENTATION ==============
 
-async function sendViaSmtp({ to, cc, subject, text, html }) {
-  // Validate config exists
+async function sendViaSmtp({ to, cc, subject, text, html, attachments = [] }) {
   getSmtpConfig();
-  return sendSmtpMail({ to, cc, subject, text, html });
+  return sendSmtpMail({ to, cc, subject, text, html, attachments });
 }
 
 // ============== AGENTMAIL IMPLEMENTATION ==============
@@ -203,48 +233,54 @@ async function fetchAgentMail(endpoint, options = {}) {
 
 // ============== AGENTMAIL SEND ==============
 
-async function sendViaAgentMail({ inboxId, to, cc, subject, text, html }) {
-  const payload = {
-    to,
-    subject,
-    text,
-    html,
-  };
-  if (cc && cc.length > 0) {
-    payload.cc = cc;
+async function sendViaAgentMail({ inboxId, to, cc, subject, text, html, attachments = [] }) {
+  // AgentMail doesn't support CID inline — embed images as base64 data URIs instead
+  let finalHtml = html;
+  if (attachments.length) {
+    const isImage = (ct) => ct.startsWith("image/");
+    const extraImgs = attachments
+      .filter(a => isImage(a.contentType))
+      .map(a => `<img src="data:${a.contentType};base64,${a.content}" alt="${a.filename}" style="max-width:100%;display:block;margin:8px 0">`)
+      .join("\n");
+    // Replace cid: refs in HTML with data URIs
+    for (const a of attachments) {
+      finalHtml = finalHtml.replace(new RegExp(`cid:${a.cid}`, "g"), `data:${a.contentType};base64,${a.content}`);
+    }
+    if (extraImgs && !attachments.some(a => html.includes(`cid:${a.cid}`))) {
+      finalHtml += `\n<hr>\n${extraImgs}`;
+    }
   }
-  const result = await fetchAgentMail(`/inboxes/${inboxId}/messages`, {
+
+  const payload = { to, subject, text, html: finalHtml };
+  if (cc && cc.length > 0) payload.cc = cc;
+
+  return fetchAgentMail(`/inboxes/${inboxId}/messages`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  return result;
 }
 
 // ============== TOOL IMPLEMENTATIONS ==============
 
 export async function notifyEmailRun(args) {
-  const { to, cc, subject, body } = args;
+  const { to, cc, subject, body, attachments: attachmentPaths = [] } = args;
 
   const html = markdownToHtml(body);
   const text = markdownToText(body);
+  const attachments = readAttachments(attachmentPaths);
 
-  // Priority: 1) AgentMail if configured with inbox, 2) Resend, 3) SMTP
   if (process.env.AGENTMAIL_API_KEY && process.env.AGENTMAIL_INBOX_ID) {
     const result = await sendViaAgentMail({
       inboxId: process.env.AGENTMAIL_INBOX_ID,
-      to,
-      cc,
-      subject,
-      text,
-      html,
+      to, cc, subject, text, html, attachments,
     });
     return `Email sent via AgentMail from ${result.from?.address || process.env.AGENTMAIL_INBOX_ID}. ID: ${result.id}`;
   }
   if (process.env.RESEND_API_KEY) {
-    const result = await sendViaResend({ to, cc, subject, text, html });
+    const result = await sendViaResend({ to, cc, subject, text, html, attachments });
     return `Email sent via Resend. ID: ${result.id}`;
   }
-  await sendViaSmtp({ to, cc, subject, text, html });
+  await sendViaSmtp({ to, cc, subject, text, html, attachments });
   return `Email sent via SMTP to ${Array.isArray(to) ? to.join(", ") : to}`;
 }
 

@@ -104,31 +104,86 @@ const dotStuff = (body) =>
 const formatAddrList = (addrs) =>
   (Array.isArray(addrs) ? addrs : [addrs]).filter(Boolean);
 
-const buildMessage = ({ from, to, cc, subject, text, html }) => {
-  const boundary = `=_tim_${crypto.randomBytes(12).toString("hex")}`;
+const buildMessage = ({ from, to, cc, subject, text, html, attachments = [] }) => {
+  const rand = () => crypto.randomBytes(8).toString("hex");
+
+  if (!attachments.length) {
+    // Simple multipart/alternative (no attachments)
+    const boundary = `=_tim_alt_${rand()}`;
+    const headers = [
+      `From: ${from}`,
+      `To: ${formatAddrList(to).join(", ")}`,
+      cc?.length ? `Cc: ${formatAddrList(cc).join(", ")}` : null,
+      `Subject: ${subject}`,
+      `Date: ${new Date().toUTCString()}`,
+      `Message-ID: <${rand()}@${os.hostname()}>`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ].filter(Boolean);
+    const parts = [
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      `Content-Transfer-Encoding: 8bit`,
+      ``,
+      text,
+      `--${boundary}`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: 8bit`,
+      ``,
+      html,
+      `--${boundary}--`,
+    ];
+    return headers.join(CRLF) + CRLF + CRLF + parts.join(CRLF);
+  }
+
+  // multipart/related: allows CID inline images
+  // Structure: related > alternative (plain+html) + inline image parts
+  const relBoundary = `=_tim_rel_${rand()}`;
+  const altBoundary = `=_tim_alt_${rand()}`;
+
   const headers = [
     `From: ${from}`,
     `To: ${formatAddrList(to).join(", ")}`,
     cc?.length ? `Cc: ${formatAddrList(cc).join(", ")}` : null,
     `Subject: ${subject}`,
     `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${crypto.randomBytes(16).toString("hex")}@${os.hostname()}>`,
+    `Message-ID: <${rand()}@${os.hostname()}>`,
     `MIME-Version: 1.0`,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/related; boundary="${relBoundary}"`,
   ].filter(Boolean);
 
-  const parts = [
-    `--${boundary}`,
+  const altPart = [
+    `--${altBoundary}`,
     `Content-Type: text/plain; charset=UTF-8`,
     `Content-Transfer-Encoding: 8bit`,
     ``,
     text,
-    `--${boundary}`,
+    `--${altBoundary}`,
     `Content-Type: text/html; charset=UTF-8`,
     `Content-Transfer-Encoding: 8bit`,
     ``,
     html,
-    `--${boundary}--`,
+    `--${altBoundary}--`,
+  ].join(CRLF);
+
+  const attParts = attachments.flatMap(a => [
+    `--${relBoundary}`,
+    `Content-Type: ${a.contentType}; name="${a.filename}"`,
+    `Content-Transfer-Encoding: base64`,
+    `Content-ID: <${a.cid}>`,
+    `Content-Disposition: inline; filename="${a.filename}"`,
+    ``,
+    // Wrap base64 at 76 chars (RFC 2045)
+    a.content.match(/.{1,76}/g).join(CRLF),
+  ]);
+
+  const parts = [
+    `--${relBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    ``,
+    altPart,
+    ...attParts,
+    `--${relBoundary}--`,
   ];
 
   return headers.join(CRLF) + CRLF + CRLF + parts.join(CRLF);
@@ -153,7 +208,7 @@ const upgradeToTls = (socket, host) =>
 const supportsStartTls = (lines) =>
   lines.some((l) => /^\d{3}[- ]STARTTLS\b/i.test(l));
 
-export async function sendMail({ to, cc, subject, text, html }) {
+export async function sendMail({ to, cc, subject, text, html, attachments = [] }) {
   const cfg = smtpConfig();
   const ehloHost = os.hostname() || "localhost";
   let socket = await connect(cfg);
@@ -192,7 +247,7 @@ export async function sendMail({ to, cc, subject, text, html }) {
     await send(socket, "DATA");
     await expect(read, 354);
 
-    const message = buildMessage({ from: cfg.from, to, cc, subject, text, html });
+    const message = buildMessage({ from: cfg.from, to, cc, subject, text, html, attachments });
     await send(socket, dotStuff(message));
     await send(socket, ".");
     await expect(read, 250);

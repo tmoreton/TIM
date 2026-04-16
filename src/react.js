@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getTools, getToolSchemas } from "./tools/index.js";
 import { loadProjectContext } from "./config.js";
-import { getInitialKnowledge, formatKnowledgeForContext } from "./knowledge.js";
+import { getInitialKnowledge, formatKnowledgeForContext, appendKnowledge } from "./knowledge.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
 import { stream, streamCompletion, Interrupted } from "./llm.js";
@@ -100,14 +100,23 @@ const COMPACT_THRESHOLD = 0.6;
 
 // --- Agent factory ---------------------------------------------------------
 
+// Directors need these by default to orchestrate — so a director profile
+// with `tools: [bash, notify_email]` still gets spawn_agent + knowledge reads.
+const DIRECTOR_BASE_TOOLS = ["spawn_agent", "list_knowledge", "read_knowledge"];
+
 export async function createAgent(profile = null) {
   const allTools = await getTools();
   const allSchemas = await getToolSchemas();
 
-  const tools = profile?.tools
-    ? Object.fromEntries(Object.entries(allTools).filter(([n]) => profile.tools.includes(n)))
+  let toolAllowlist = profile?.tools;
+  if (toolAllowlist && profile?.role === "director") {
+    toolAllowlist = Array.from(new Set([...toolAllowlist, ...DIRECTOR_BASE_TOOLS]));
+  }
+
+  const tools = toolAllowlist
+    ? Object.fromEntries(Object.entries(allTools).filter(([n]) => toolAllowlist.includes(n)))
     : allTools;
-  const toolSchemas = profile?.tools
+  const toolSchemas = toolAllowlist
     ? Object.values(tools).map((t) => t.schema)
     : allSchemas;
 
@@ -148,8 +157,20 @@ history dir, read_file the snapshot you want, and write_file it back.`;
     const autoKnowledge = knowledgeDomain ? getInitialKnowledge(knowledgeDomain, knowledgeRefs) : [];
     const knowledgeSection = formatKnowledgeForContext(autoKnowledge);
 
+    const directorPreamble = profile?.role === "director"
+      ? `\n\n## Orchestration (you are a director)
+- Your workers are other agents you dispatch via spawn_agent. Each call returns
+  a JSON string with {summary, knowledgeRef, fullText}. When knowledgeRef is set,
+  read_knowledge on that ref for the full output instead of relying on summary.
+- Durable facts (user goals, preferences, recurring context) live in the
+  knowledge base. Read before you plan; write (write_knowledge / append_knowledge)
+  when you learn something worth keeping across runs.
+- Work iteratively: dispatch a worker, read its knowledge output, decide the next
+  step, dispatch again. Don't try to plan everything upfront.`
+      : "";
+
     if (profile?.systemPrompt) {
-      return `${profile.systemPrompt}${knowledgeSection}\n\nYou are running in ${process.cwd()}. Available tools: ${toolList}.${paths}${selfEdit}${customizations}`;
+      return `${profile.systemPrompt}${directorPreamble}${knowledgeSection}\n\nYou are running in ${process.cwd()}. Available tools: ${toolList}.${paths}${selfEdit}${customizations}`;
     }
     const base = `You are tim, a minimal coding assistant running in ${process.cwd()}.
 You have tools: ${toolList}.
@@ -210,6 +231,18 @@ You have tools: ${toolList}.
             if (state.usage.lastPrompt / CONTEXT_LIMIT >= COMPACT_THRESHOLD) {
               ui.info(`context at ${Math.round((state.usage.lastPrompt / CONTEXT_LIMIT) * 100)}% — auto-compacting...`);
               await compactFn();
+            }
+          }
+          // Auto-write worker output to knowledge (fires whether run standalone or via spawn_agent)
+          if (state.profile?.produces && message.content) {
+            const { domain } = state.profile.produces;
+            const resolved = state.profile.produces.name.replace(/\{date\}/g, new Date().toISOString().split("T")[0]);
+            try {
+              appendKnowledge(domain, resolved, `${state.profile.name}`, message.content);
+              state.lastKnowledgeRef = `${domain}/${resolved}`;
+              ui.info(`→ knowledge written: ${state.lastKnowledgeRef}`);
+            } catch (e) {
+              ui.info(`! produces write failed: ${e.message}`);
             }
           }
           return;

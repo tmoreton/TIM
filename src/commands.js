@@ -41,7 +41,7 @@ const HELP_ROWS = [
   ["/context", "show whether TIM.md was loaded"],
   ["/compact", "summarize older messages to free context"],
   ["/sessions", "list saved sessions"],
-  ["/agents", "list available sub-agent profiles"],
+  ["/agents", "list agents grouped by role (director/worker)"],
   ["/agent <name> [task/file]", "run a sub-agent directly"],
   ["/knowledge [domain]", "list knowledge domains, or files in a domain"],
   ["/env", "manage $TIM_DIR/.env (list | set KEY=VAL | unset KEY | email)"],
@@ -74,6 +74,11 @@ const FLAG_ROWS = [
   ["tim --resume [id]", "resume latest or by id"],
   ["tim --list", "list sessions and exit"],
   ["tim --yolo", "start with auto-accept on (use with care)"],
+  ["tim agent new [name]", "create a new agent (guided)"],
+  ["tim agent list", "list all agents"],
+  ["tim agent edit <name>", "open agent profile in $EDITOR"],
+  ["tim agent delete <name>", "delete an agent profile"],
+  ["tim run <agent> \"task\"", "run an agent headlessly"],
 ];
 
 const ATTACHMENT_ROWS = [
@@ -228,16 +233,26 @@ export async function runCommand(input) {
     case "agents": {
       const profiles = Object.values(loadAgents());
       if (!profiles.length) {
-        info("no agents found — add markdown files to $TIM_DIR/agents/ or ./.tim/agents/");
+        info("no agents found — run: tim agent new");
         return;
       }
-      console.log();
+      const directors = profiles.filter(p => p.role === "director");
+      const workers   = profiles.filter(p => p.role === "worker");
       const pad = Math.max(...profiles.map((p) => p.name.length)) + 2;
-      for (const p of profiles) {
-        const tools = p.tools ? p.tools.join(",") : "all";
-        console.log(`  ${c.teal(p.name.padEnd(pad))} ${c.dim(p.description)} ${c.dim(`[${tools}]`)}`);
-      }
+      const printGroup = (label, list) => {
+        if (!list.length) return;
+        console.log(`  ${c.bold(c.teal(label))}`);
+        for (const p of list) {
+          const prod = p.produces ? c.dim(` → ${p.produces.domain}/${p.produces.name}`) : "";
+          const kd   = p.knowledgeDomain ? c.dim(` [${p.knowledgeDomain}]`) : "";
+          console.log(`    ${c.white(p.name.padEnd(pad))} ${c.dim(p.description)}${kd}${prod}`);
+        }
+        console.log();
+      };
       console.log();
+      printGroup("directors", directors);
+      printGroup("workers", workers);
+      info("create: tim agent new  •  edit: tim agent edit <name>  •  run: tim run <name> \"task\"");
       return;
     }
     case "agent": {
