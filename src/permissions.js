@@ -50,7 +50,7 @@ export async function confirm(tool, args, preview) {
     info(`⊘ ${tool} blocked — plan mode is on (/plan to exit)`);
     return false;
   }
-  if (autoAccept) return true;
+  if (isAutoAccept()) return true;
   const key = keyFor(tool, args);
   if (sessionAllow.has(key)) return true;
 
