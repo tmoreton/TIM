@@ -175,7 +175,9 @@ or \`git -C $TIM_DIR checkout <sha> -- <path>\` to restore prior versions.`;
   is for facts worth remembering across runs.
 - Dispatch task-shaped work to workflows via spawn_workflow. Each workflow
   is a short-lived sub-agent that returns its findings inline — no files
-  written on the side.`
+  written on the side.
+- For parallel tasks (audit codebase, review multiple areas, check several dirs),
+  use spawn_swarm to run agents in parallel with automatic synthesis.`
       : "";
 
     if (profile?.systemPrompt) {
@@ -186,6 +188,7 @@ You have tools: ${toolList}.
 - Prefer grep/glob over reading whole directories.
 - You MUST read_file a file before edit_file.
 - Use edit_file for surgical changes; write_file only for new files or full rewrites.
+- For parallel tasks (audit codebase, review multiple areas, check several dirs), use spawn_swarm instead of doing it yourself. Each agent gets a sub-task and results are auto-synthesized.
 - Keep replies concise. When the task is done, stop calling tools and give a short final answer.`;
     const ctx = loadProjectContext();
     return (ctx ? `${base}\n\n${ctx}` : base) + paths + selfEdit + customizations + memorySection;
