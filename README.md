@@ -19,16 +19,18 @@ The whole point is to be readable—small enough to understand end-to-end.
 ## Install
 
 ```bash
-git clone <this-repo> TIM && cd TIM
-npm install
-npm link
+git clone https://github.com/tmoreton/TIM.git && cd TIM
+npm link # installs the `tim` binary globally
 
-tim
 tim /env set FIREWORKS_API_KEY=...
 tim /env set OPENROUTER_API_KEY=...
+tim /env set TAVILY_API_KEY=...
+tim /env set AGENTMAIL_API_KEY=...
+tim /env set AGENTMAIL_INBOX_ID=...
+tim /env set AGENTMAIL_WHITELIST=...
 ```
 
-## How It Works
+## Tools
 
 | Tool | Description |
 |------|-------------|
@@ -49,34 +51,15 @@ tim /env set OPENROUTER_API_KEY=...
 | `create_email_inbox` | create new AgentMail inbox |
 | `generate_image` | generate images via OpenRouter (requires `OPENROUTER_API_KEY`) |
 
-**Custom Tools**: Drop a `.js` file in `~/.tim/tools/` that exports `schema` + `run`:
+## Agents
 
-```javascript
-// ~/.tim/tools/my_api.js
-export const schema = {
-  type: "function",
-  function: {
-    name: "my_api",
-    description: "Call my API",
-    parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] }
-  }
-};
 
-export async function run({ query }) {
-  return "Hello " + query;
-}
-
-// Optional: gate on env var
-export const requiredEnv = "MY_API_KEY";
-```
-
-**Permissions**: Destructive ops (`edit_file`, `write_file`, `bash`) prompt for confirmation. `[a]lways` allowlists for the session. `/yolo` toggles auto-accept.
-
-**Context**: Loads `~/.tim/TIM.md` (global) and `./TIM.md` (project) into the system prompt.
-
-**Sessions**: Auto-saved to `~/.tim/sessions/`. Resume with `tim --resume [id]`.
-
----
+| Agent | Description |
+|------|-------------|
+| `agent` | run agent |
+| `workflow` | run workflow |
+| `trigger` | scheduled cron triggers |
+| `memory` | agent memory path/contents |
 
 ## Project Layout
 
@@ -118,6 +101,45 @@ src/
 
 ---
 
+## `.tim` Directory Structure
+
+TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
+
+```
+~/.tim/
+├── .env                    # API keys and env vars (auto-loaded)
+├── agents/                 # Agent profiles (*.md with frontmatter)
+│   ├── youtube.md
+│   └── github-reviewer.md
+├── workflows/              # Workflow task specs (*.md)
+│   ├── daily-report.md
+│   └── pr-summary.md
+├── memory/                 # Agent memory files (*.md)
+│   ├── youtube.md          # Persistent context per agent
+│   └── github-reviewer.md
+├── sessions/               # Saved conversation history (JSON)
+│   ├── 2024-01-15-abc123.json
+│   └── 2024-01-16-def456.json
+├── triggers/               # Scheduled cron triggers (*.md)
+│   └── morning-digest.md
+├── tools/                  # Custom user tools (*.js)
+│   └── my-api-client.js
+└── mcp.json                # MCP server configuration
+```
+
+| Path | Purpose |
+|------|---------|
+| `.env` | Environment variables auto-loaded on startup. Set via `/env set KEY=val` |
+| `agents/` | Agent identity profiles. Each defines tools, system prompt, and description |
+| `workflows/` | Task specs that pair an agent with a specific prompt and optional precheck |
+| `memory/` | Persistent agent memory. Survives across sessions, auto-loaded into context |
+| `sessions/` | Saved REPL conversations. Resume with `tim --resume` or `/sessions` |
+| `triggers/` | Cron-scheduled workflows. Run by `tim start` daemon |
+| `tools/` | Custom JS tools extending TIM's capabilities. Auto-loaded on startup |
+| `mcp.json` | MCP (Model Context Protocol) server definitions |
+
+---
+
 ## Slash Commands
 
 | Command | Description |
@@ -156,14 +178,3 @@ src/
 | `AGENTMAIL_API_KEY` | — | Email send/receive |
 | `AGENTMAIL_INBOX_ID` | — | Default inbox for receiving |
 | `AGENTMAIL_WHITELIST` | — | Allowed sender emails/domains (required)
-
----
-
-## Image & PDF Input
-
-Drag and drop files or paste paths:
-
-```
-you> /Users/me/screenshot.png what does this show?
-     attached: screenshot.png
-```

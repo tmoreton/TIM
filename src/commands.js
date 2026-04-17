@@ -41,6 +41,7 @@ const HELP_ROWS = [
   ["/workflow <name>", "run workflow"],
   ["/triggers", "scheduled cron triggers"],
   ["/memory [agent]", "agent memory path/contents"],
+  ["/env [cmd]", "env vars: list, set KEY=VAL, unset KEY, email"],
   ["/loc", "lines of code (all)"],
   ["/sloc", "source lines (no comments/blanks)"],
   ["/clear", "new session"],

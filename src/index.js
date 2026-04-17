@@ -27,10 +27,10 @@ import {
   createAgent,
 } from "./react.js";
 import { loadAgents, writeAgentProfile, agentExists, getAgentsDir, deleteAgentProfile } from "./agents.js";
-import { loadWorkflows, writeWorkflow, workflowExists, getWorkflowsDir, deleteWorkflow } from "./workflows.js";
+import { loadWorkflows, writeWorkflow, workflowExists, getWorkflowsDir, deleteWorkflow, mergeProfile } from "./workflows.js";
 import { runCommand } from "./commands.js";
 import { load as loadSession, latest } from "./session.js";
-import { setAutoAccept } from "./permissions.js";
+
 import { startRepl } from "./repl.js";
 import { loadTriggers, writeTrigger, deleteTrigger, triggerExists, getTriggerState, getTriggersDir, runTrigger } from "./triggers.js";
 import { start } from "./start.js";
@@ -72,6 +72,12 @@ const runAndPrint = async (sub, task) => {
 };
 
 const argv = process.argv.slice(2);
+
+// Headless runs (tim run, --yolo) should auto-accept without prompting.
+// Set this BEFORE importing permissions.js so it initializes correctly.
+if (argv[0] === "run" || argv.includes("--yolo")) {
+  process.env.TIM_AUTO_ACCEPT = "1";
+}
 
 if (argv.includes("--list")) {
   await runCommand("/sessions");
@@ -396,7 +402,6 @@ if (argv[0] === "run") {
     console.error('usage: tim run <workflow|agent> "<task>"');
     process.exit(1);
   }
-  setAutoAccept(true);
 
   const workflow = loadWorkflows()[name];
   if (workflow) {
@@ -419,7 +424,6 @@ if (argv[0] === "run") {
 }
 
 if (argv.includes("--yolo")) {
-  setAutoAccept(true);
   ui.info("⚠ auto-accept ON (--yolo) — edits and bash run without prompting");
 }
 
