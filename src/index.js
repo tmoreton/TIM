@@ -35,6 +35,7 @@ import { startRepl } from "./repl.js";
 import { loadTriggers, writeTrigger, deleteTrigger, triggerExists, getTriggerState, getTriggersDir } from "./triggers.js";
 import { start } from "./start.js";
 import { commit as commitHistory } from "./history.js";
+import { disconnectMcpServers } from "./mcp.js";
 import * as ui from "./ui.js";
 
 // --- helpers ---
@@ -448,6 +449,11 @@ if (resumeIdx !== -1) {
   resumeSession(data);
   ui.success(`resumed ${data.id} (${(data.messages || []).length} messages)`);
 }
+
+// Cleanup MCP connections on exit
+process.on("SIGINT", () => { disconnectMcpServers(); process.exit(0); });
+process.on("SIGTERM", () => { disconnectMcpServers(); process.exit(0); });
+process.on("exit", () => { disconnectMcpServers(); });
 
 // Start the REPL
 startRepl();

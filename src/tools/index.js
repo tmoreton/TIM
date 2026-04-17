@@ -1,6 +1,7 @@
 // Tool registry. Core tools are built-in and filtered by required env vars
 // (e.g. generate_image needs OPENROUTER_API_KEY). Custom tools are loaded
 // from $TIM_DIR/tools/*.js and follow the same requiredEnv convention.
+// MCP tools are loaded from external MCP servers configured in $TIM_DIR/mcp.json.
 
 import { rehydrateReadsFromMessages, markRead } from "./fs.js";
 import * as fs from "./fs.js";
@@ -8,6 +9,7 @@ import * as bash from "./bash.js";
 import * as search from "./search.js";
 import * as spawn from "./spawn.js";
 import { loadCustomTools, reloadCustomTools } from "./custom.js";
+import { connectMcpServers, getMcpTools, disconnectMcpServers } from "../mcp.js";
 
 import * as webFetch from "./web_fetch.js";
 import * as webSearch from "./web_search.js";
@@ -47,15 +49,44 @@ const filterCoreTools = () =>
     Object.entries(coreToolDefs).filter(([, t]) => hasRequiredEnv(t.requiredEnv)),
   );
 
-// Merged tools (filtered core + custom). Built lazily so env vars from
+// Merged tools (filtered core + custom + MCP). Built lazily so env vars from
 // $TIM_DIR/.env are loaded by the time we decide what's registered.
 let mergedTools = null;
+let mcpConnected = false;
 
 async function getMergedTools() {
   if (mergedTools) return mergedTools;
   const core = filterCoreTools();
   const custom = await loadCustomTools();
-  mergedTools = { ...core, ...custom };
+
+  // Connect to MCP servers and add their tools
+  if (!mcpConnected) {
+    await connectMcpServers();
+    mcpConnected = true;
+  }
+  const mcpTools = getMcpTools();
+  const mcpToolDefs = {};
+  for (const tool of mcpTools) {
+    const fullName = `mcp_${tool.server}_${tool.name}`;
+    mcpToolDefs[fullName] = {
+      schema: {
+        type: "function",
+        function: {
+          name: fullName,
+          description: `[${tool.server}] ${tool.description}`,
+          parameters: tool.inputSchema || { type: "object", properties: {} },
+        },
+      },
+      run: async (args) => {
+        return await tool._call(args);
+      },
+      isMcp: true,
+      server: tool.server,
+      originalName: tool.name,
+    };
+  }
+
+  mergedTools = { ...core, ...custom, ...mcpToolDefs };
   return mergedTools;
 }
 
