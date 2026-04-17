@@ -120,6 +120,69 @@ if (argv.includes("--list")) {
   process.exit(0);
 }
 
+// Check if first arg is an agent name (for `tim <agent>` CLI)
+// This must come before the agent subcommand handling
+const agents = loadAgents();
+const firstArgIsAgent = argv[0] && !argv[0].startsWith("-") && ![
+  "agent", "workflow", "trigger", "schedule", "run", "env", "start"
+].includes(argv[0]) && agents[argv[0]];
+
+if (firstArgIsAgent) {
+  const agentName = argv[0];
+  const profile = agents[agentName];
+
+  // Check for attachments (files after --)
+  const attachments = { images: [], pdfs: [] };
+  let dashDashIdx = argv.indexOf("--");
+  if (dashDashIdx !== -1) {
+    for (let i = dashDashIdx + 1; i < argv.length; i++) {
+      const p = argv[i];
+      const ext = p.toLowerCase().slice(p.lastIndexOf("."));
+      if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].includes(ext))
+        attachments.images.push(p);
+      else if (ext === ".pdf") attachments.pdfs.push(p);
+    }
+  }
+
+  // Get optional initial task (args between agent name and -- or end)
+  let initialTask = "";
+  const startIdx = 1; // after agent name
+  const endIdx = dashDashIdx !== -1 ? dashDashIdx : argv.length;
+  if (endIdx > startIdx) {
+    initialTask = argv.slice(startIdx, endIdx).join(" ").trim();
+  }
+
+  // Handle --yolo for auto-accept
+  if (argv.includes("--yolo")) {
+    process.env.TIM_AUTO_ACCEPT = "1";
+  }
+
+  // Handle --resume for session resumption
+  const resumeIdx = argv.indexOf("--resume");
+  if (resumeIdx !== -1) {
+    const id = argv[resumeIdx + 1];
+    const data = id ? loadSession(id) : latest();
+    if (!data) {
+      console.error("no session to resume");
+      process.exit(1);
+    }
+    // Note: resuming with a specific agent means we'll switch to that agent's context
+    // The session messages will be kept but agent context will change
+  }
+
+  // Start REPL with this agent
+  import("./react.js").then(({ createAgent }) => {
+    createAgent(profile).then((agent) => {
+      // Start REPL with the agent's state already initialized
+      import("./repl.js").then(({ startReplWithAgent }) => {
+        startReplWithAgent(agent, attachments, initialTask);
+      });
+    });
+  });
+  // Don't exit - let the REPL run
+  await new Promise(() => {});
+}
+
 // tim agent new|list|edit|delete
 if (argv[0] === "agent") {
   const sub = argv[1];

@@ -52,6 +52,8 @@ const HELP_ROWS = [
   ["/exit", "quit"],
 ];
 
+// Note: tim <agent> starts interactive chat with that agent (not listed in /help to avoid confusion)
+
 const EMAIL_ENV_HELP = [
   ["AGENTMAIL_API_KEY", "AgentMail API key for send + receive (recommended)"],
   ["AGENTMAIL_INBOX_ID", "Default AgentMail inbox (send from + receive to)"],
@@ -66,6 +68,8 @@ const EMAIL_ENV_HELP = [
 
 const FLAG_ROWS = [
   ["tim", "start fresh interactive session"],
+  ["tim <agent>", "chat interactively with a specific agent"],
+  ["tim <agent> --yolo", "chat with agent + auto-accept mode"],
   ["tim --resume [id]", "resume latest session, or by id"],
   ["tim --list", "list saved sessions and exit"],
   ["tim --yolo", "start with auto-accept enabled (use with care)"],
@@ -178,10 +182,17 @@ export async function runCommand(input) {
       success(`model → ${target}`);
       return;
     }
-    case "clear":
+    case "clear": {
+      const { isAgentMode } = await import("./react.js");
+      const wasAgentMode = isAgentMode();
       await resetMessages();
-      success("conversation cleared — new session");
+      if (wasAgentMode) {
+        success("conversation cleared — new session (run /agent <name> to chat with another agent)");
+      } else {
+        success("conversation cleared — new session");
+      }
       return;
+    }
     case "context":
       info(hasProjectContext() ? "TIM.md loaded" : "no TIM.md found");
       return;
@@ -259,7 +270,7 @@ export async function runCommand(input) {
         console.log(`    ${c.white(p.name.padEnd(pad))} ${c.dim(p.description)}`);
       }
       console.log();
-      info("create: tim agent new  •  edit: tim agent edit <name>  •  run: tim run <name> \"task\"");
+      info("create: tim agent new  •  edit: tim agent edit <name>  •  chat: tim <agent>  •  run: tim run <name> \"task\"");
       return;
     }
     case "workflows": {

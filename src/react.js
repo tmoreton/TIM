@@ -124,7 +124,7 @@ export async function createAgent(profile = null) {
     usage: { prompt: 0, completion: 0, lastPrompt: 0 },
     toolCache: new ToolCache(),
     profile,
-    persist: !profile, // sub-agents don't write sessions by default
+    persist: true, // always persist sessions for interactive REPL use
   };
 
   const buildSystem = () => {
@@ -394,3 +394,21 @@ export const getModel      = lazy("getModel");
 export const setModel      = lazy("setModel");
 export const getSessionId  = lazy("getSessionId");
 export const hasProjectContext = () => !!loadProjectContext();
+
+// For starting REPL with a specific agent (tim <agent> command)
+export function setMainAgent(agent) {
+  main = agent;
+  mainReady = Promise.resolve(agent);
+}
+
+// Check if we're currently in agent mode (vs base tim)
+export function isAgentMode() {
+  return main?.state?.profile?.name != null;
+}
+
+// Switch back to base tim from agent mode
+export async function clearAgent() {
+  main = null;
+  mainReady = createAgent().then((a) => { main = a; });
+  await mainReady;
+}

@@ -76,6 +76,23 @@ export function banner(model, cwd) {
   console.log();
 }
 
+export function agentBanner(agentName, model, cwd) {
+  console.log();
+  for (const line of BANNER) console.log("  " + gradient(line, START, END));
+  console.log();
+  console.log(
+    "  " + gradient(`agent: ${agentName}`, START, END),
+  );
+  console.log();
+  console.log("  " + c.dim(`model   `) + c.white(model));
+  console.log("  " + c.dim(`cwd     `) + c.white(cwd));
+  console.log(
+    "  " +
+      c.dim(`hint    /help for commands · Ctrl+C to interrupt · /clear to switch to base tim`),
+  );
+  console.log();
+}
+
 
 let mdCodeBlock = false;
 
@@ -138,6 +155,7 @@ export function renderMarkdownLine(line) {
 
 
 export const prompt = () => c.bold(c.teal("❯ "));
+export const agentPrompt = (agentName) => c.bold(c.teal(`[${agentName}] ❯ `));
 export const header = () => c.bold(gradient("tim", START, END));
 
 

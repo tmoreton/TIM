@@ -81,12 +81,14 @@ let lastSigintAt = 0;
 let buffer = [];
 let inHeredoc = false;
 let flushTimer = null;
-const FLUSH_DELAY_MS = 50; // debounce for paste detection
+const FLUSH_DELAY_MS = 300; // debounce for paste detection (allow multi-line paste)
 
 // Inputs typed while a turn is running land here and drain FIFO when idle.
 const inputQueue = [];
 const previewInput = (s) =>
   (s.length > 60 ? s.slice(0, 57) + "..." : s).replace(/\n/g, " ");
+
+let currentAgentName = null; // Set when starting REPL with a specific agent
 
 const flushBuffer = () => {
   const joined = buffer.join("\n");
@@ -95,7 +97,10 @@ const flushBuffer = () => {
 };
 
 const safePrompt = () => {
-  if (rl && !rl.closed) rl.prompt();
+  if (!rl || rl.closed) return;
+  // Update prompt to show agent name if in agent mode
+  rl.setPrompt(currentAgentName ? ui.agentPrompt(currentAgentName) : ui.prompt());
+  rl.prompt();
 };
 
 
@@ -228,6 +233,7 @@ const setupLineHandler = (initialAttachments) => {
 
 
 export async function startRepl(initialAttachments = null) {
+  currentAgentName = null; // Clear agent mode for base tim REPL
   rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -246,6 +252,45 @@ export async function startRepl(initialAttachments = null) {
   }
   setupLineHandler(initialAttachments);
   safePrompt();
+
+  return rl;
+}
+
+// Start REPL with a specific agent already loaded (for `tim <agent>` command)
+// The agent param is the object returned by createAgent() in react.js
+// initialTask: optional task to run immediately on startup
+export async function startReplWithAgent(agent, initialAttachments = null, initialTask = "") {
+  currentAgentName = agent.state.profile?.name || null;
+  
+  rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: ui.agentPrompt(currentAgentName),
+  });
+  setReadline(rl);
+
+  // Set up the global agent references so the REPL uses this agent
+  const react = await import("./react.js");
+  react.setMainAgent(agent);
+
+  // readline auto-closes on SIGINT unless the interface has its own listener
+  process.on("SIGINT", handleSigint);
+  rl.on("SIGINT", handleSigint);
+  rl.on("close", () => process.exit(0));
+
+  ui.agentBanner(currentAgentName, agent.getModel(), process.cwd());
+  if (isAutoAccept()) {
+    ui.info("⚠ auto-accept ON — edits and bash commands will run without prompting");
+  }
+  setupLineHandler(initialAttachments);
+  
+  // If there's an initial task, run it
+  if (initialTask) {
+    ui.info(`running initial task: ${initialTask.slice(0, 60)}${initialTask.length > 60 ? "..." : ""}`);
+    await processRaw(initialTask, initialAttachments);
+  } else {
+    safePrompt();
+  }
 
   return rl;
 }
