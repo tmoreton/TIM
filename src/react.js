@@ -7,10 +7,10 @@ import { loadProjectContext } from "./config.js";
 import { formatMemoryForContext } from "./memory.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
-import { stream, streamCompletion, Interrupted } from "./llm.js";
+import { stream, streamCompletion, complete, Interrupted } from "./llm.js";
 import { ToolCache } from "./cache.js";
 import { isPlanMode } from "./permissions.js";
-import { isCwdTimSource } from "./paths.js";
+import { isCwdTimSource, timPath } from "./paths.js";
 import { commit as commitHistory } from "./history.js";
 import * as ui from "./ui.js";
 
@@ -252,7 +252,7 @@ You have tools: ${toolList}.
             if (result !== undefined) {
               ui.toolResult(`(cached) ${String(result).slice(0, 100)}`);
             } else {
-              const ctx = { signal, toolCache: state.toolCache, agentName: state.profile?.name || null };
+              const ctx = { signal, toolCache: state.toolCache, agentName: state.profile?.name || null, llm: { complete }, timPath };
               result = await tool.run(args, ctx);
               let cacheDeps;
               if (result && typeof result === "object" && !Array.isArray(result)) {

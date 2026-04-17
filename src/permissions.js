@@ -5,17 +5,21 @@ import { warn, confirmPrompt, info } from "./ui.js";
 
 const sessionAllow = new Set();
 let sharedRl = null;
-let autoAccept = process.env.TIM_AUTO_ACCEPT === "1" || process.env.TIM_AUTO_ACCEPT === "true";
+let sessionAutoAccept = null;
 let planMode = false;
 
 export const setReadline = (rl) => {
   sharedRl = rl;
 };
 
+const envAutoAccept = () =>
+  process.env.TIM_AUTO_ACCEPT === "1" || process.env.TIM_AUTO_ACCEPT === "true";
+
 export const setAutoAccept = (v) => {
-  autoAccept = !!v;
+  sessionAutoAccept = !!v;
 };
-export const isAutoAccept = () => autoAccept;
+export const isAutoAccept = () =>
+  sessionAutoAccept !== null ? sessionAutoAccept : envAutoAccept();
 
 export const setPlanMode = (v) => {
   planMode = !!v;
