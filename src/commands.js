@@ -42,8 +42,7 @@ const HELP_ROWS = [
   ["/triggers", "scheduled cron triggers"],
   ["/memory [agent]", "agent memory path/contents"],
   ["/env [cmd]", "env vars: list, set KEY=VAL, unset KEY, email"],
-  ["/loc", "lines of code (all)"],
-  ["/sloc", "source lines (no comments/blanks)"],
+  ["/loc", "source lines of code"],
   ["/clear", "new session"],
   ["/compact", "summarize old messages"],
   ["/sessions", "saved conversations"],
@@ -515,19 +514,13 @@ export async function runCommand(input) {
       }
       return error("usage: /trigger [list|add|remove|run] [name]");
     }
-    case "loc":
-    case "sloc": {
+    case "loc": {
       const { execSync } = await import("node:child_process");
       try {
-        const isStrict = cmd === "sloc";
-        let command = 'find src -name "*.js" | xargs wc -l | tail -1';
-        if (isStrict) {
-          command = 'find src -name "*.js" -exec cat {} + | grep -v "^[[:space:]]*\\/\\/" | grep -v "^[[:space:]]*\\/\\*" | grep -v "^[[:space:]]*\\*\\/" | grep -v "^[[:space:]]*$" | wc -l';
-        }
+        const command = 'find src -name "*.js" -exec cat {} + | grep -v "^[[:space:]]*\\/\\/" | grep -v "^[[:space:]]*\\/\\*" | grep -v "^[[:space:]]*\\*\\/" | grep -v "^[[:space:]]*$" | wc -l';
         const result = execSync(command, { encoding: 'utf8', cwd: process.cwd() });
         const lines = result.trim().split(/\s+/)[0];
-        const label = isStrict ? "source lines (no comments/blanks)" : "lines of code";
-        success(`${Number(lines).toLocaleString()} ${label}`);
+        success(`${Number(lines).toLocaleString()} source lines`);
       } catch {
         error("could not count lines");
       }
