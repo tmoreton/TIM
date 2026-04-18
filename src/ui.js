@@ -58,7 +58,7 @@ const BANNER = [
 const START = [13, 148, 136]; // deep teal (teal-600)
 const END = [94, 234, 212]; // bright aqua (teal-300)
 
-export function banner(model, cwd) {
+export function banner(model, cwd, yolo = false) {
   console.log();
   for (const line of BANNER) console.log("  " + gradient(line, START, END));
   console.log();
@@ -73,10 +73,13 @@ export function banner(model, cwd) {
     "  " +
       c.dim(`hint    /help for commands · Ctrl+C to interrupt`),
   );
+  if (yolo) {
+    console.log("  " + c.red(`⚠ YOLO mode — edits & bash auto-execute!`));
+  }
   console.log();
 }
 
-export function agentBanner(agentName, model, cwd) {
+export function agentBanner(agentName, model, cwd, yolo = false) {
   console.log();
   for (const line of BANNER) console.log("  " + gradient(line, START, END));
   console.log();
@@ -90,6 +93,9 @@ export function agentBanner(agentName, model, cwd) {
     "  " +
       c.dim(`hint    /help for commands · Ctrl+C to interrupt · /clear to switch to base tim`),
   );
+  if (yolo) {
+    console.log("  " + c.red(`⚠ YOLO mode — edits & bash auto-execute!`));
+  }
   console.log();
 }
 

@@ -246,10 +246,9 @@ export async function startRepl(initialAttachments = null) {
   rl.on("SIGINT", handleSigint);
   rl.on("close", () => process.exit(0));
 
-  ui.banner(await getModel(), process.cwd());
-  if (isAutoAccept()) {
-    ui.info("⚠ auto-accept ON — edits and bash commands will run without prompting");
-  }
+  const yolo = isAutoAccept();
+  ui.banner(await getModel(), process.cwd(), yolo);
+  ui.success("hey 👋 i'm tim, what can i help you with?");
   setupLineHandler(initialAttachments);
   safePrompt();
 
@@ -278,10 +277,8 @@ export async function startReplWithAgent(agent, initialAttachments = null, initi
   rl.on("SIGINT", handleSigint);
   rl.on("close", () => process.exit(0));
 
-  ui.agentBanner(currentAgentName, agent.getModel(), process.cwd());
-  if (isAutoAccept()) {
-    ui.info("⚠ auto-accept ON — edits and bash commands will run without prompting");
-  }
+  const yolo = isAutoAccept();
+  ui.agentBanner(currentAgentName, agent.getModel(), process.cwd(), yolo);
   setupLineHandler(initialAttachments);
   
   // If there's an initial task, run it
