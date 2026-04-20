@@ -5,6 +5,7 @@
    ██║    ██║ ██║ ╚═╝ ██║
    ╚═╝    ╚═╝ ╚═╝     ╚═╝
 ```
+![alt text](tim.svg)
 
 *the minimalist coding companion*
 
