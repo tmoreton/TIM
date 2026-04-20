@@ -80,8 +80,17 @@ let lastSigintAt = 0;
 
 let buffer = [];
 let inHeredoc = false;
+let inPaste = false;
 let flushTimer = null;
-const FLUSH_DELAY_MS = 300; // debounce for paste detection (allow multi-line paste)
+// Fallback debounce for terminals that don't support bracketed paste (DECSET
+// 2004). With bracketed paste active this never fires during a paste.
+const FLUSH_DELAY_MS = 150;
+
+// Bracketed paste markers — terminal brackets pasted text with these when
+// DECSET 2004 is enabled, so we can distinguish paste from typed Enter.
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+const PASTE_MARKER_RE = /\x1b\[20[01]~/g;
 
 // Inputs typed while a turn is running land here and drain FIFO when idle.
 const inputQueue = [];
@@ -196,10 +205,32 @@ const handleSigint = async () => {
   safePrompt();
 };
 
+// Watch raw stdin for bracketed-paste markers so we know paste state by the
+// time readline's `line` events fire for the pasted content.
+const setupPasteDetector = () => {
+  process.stdin.on("data", (chunk) => {
+    const s = chunk.toString("utf8");
+    const startIdx = s.lastIndexOf(PASTE_START);
+    const endIdx = s.lastIndexOf(PASTE_END);
+    if (startIdx !== -1 && startIdx > endIdx) {
+      inPaste = true;
+      clearTimeout(flushTimer);
+    }
+    if (endIdx !== -1 && endIdx > startIdx) {
+      inPaste = false;
+    }
+  });
+};
+
+const stripPasteMarkers = (s) => s.replace(PASTE_MARKER_RE, "");
+
 const setupLineHandler = (initialAttachments) => {
-  rl.on("line", async (line) => {
+  rl.on("line", async (rawLine) => {
+    const line = stripPasteMarkers(rawLine);
+
     // heredoc mode: collect until closing """
     if (inHeredoc) {
+      clearTimeout(flushTimer);
       if (line.trim() === '"""') {
         inHeredoc = false;
         const input = flushBuffer();
@@ -213,75 +244,72 @@ const setupLineHandler = (initialAttachments) => {
 
     // entering heredoc mode
     if (line.trim() === '"""') {
+      clearTimeout(flushTimer);
       inHeredoc = true;
       return;
     }
 
     // explicit line continuation with backslash
     if (line.endsWith("\\")) {
+      clearTimeout(flushTimer);
       buffer.push(line.slice(0, -1));
+      return;
+    }
+
+    // Inside a paste, just buffer — user presses Enter afterward to send.
+    if (inPaste) {
+      buffer.push(line);
       return;
     }
 
     buffer.push(line);
 
-    // debounced flush: if more lines arrive quickly (paste), we wait
+    // Fallback debounce for terminals without bracketed paste support.
     clearTimeout(flushTimer);
     flushTimer = setTimeout(() => processInput(initialAttachments), FLUSH_DELAY_MS);
   });
 };
 
 
-export async function startRepl(initialAttachments = null) {
-  currentAgentName = null; // Clear agent mode for base tim REPL
+const enableBracketedPaste = () => {
+  if (process.stdout.isTTY) process.stdout.write("\x1b[?2004h");
+};
+
+const disableBracketedPaste = () => {
+  if (process.stdout.isTTY) process.stdout.write("\x1b[?2004l");
+};
+
+async function bootRepl({ agent = null, initialAttachments = null, initialTask = "" } = {}) {
+  currentAgentName = agent?.state?.profile?.name || null;
   rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: ui.prompt(),
+    prompt: currentAgentName ? ui.agentPrompt(currentAgentName) : ui.prompt(),
   });
   setReadline(rl);
 
-  // readline auto-closes on SIGINT unless the interface has its own listener
+  enableBracketedPaste();
+  setupPasteDetector();
+  process.on("exit", disableBracketedPaste);
   process.on("SIGINT", handleSigint);
   rl.on("SIGINT", handleSigint);
-  rl.on("close", () => process.exit(0));
-
-  const yolo = isAutoAccept();
-  ui.banner(await getModel(), process.cwd(), yolo);
-  ui.success("hey 👋 i'm tim, what can i help you with?");
-  setupLineHandler(initialAttachments);
-  safePrompt();
-
-  return rl;
-}
-
-// Start REPL with a specific agent already loaded (for `tim <agent>` command)
-// The agent param is the object returned by createAgent() in react.js
-// initialTask: optional task to run immediately on startup
-export async function startReplWithAgent(agent, initialAttachments = null, initialTask = "") {
-  currentAgentName = agent.state.profile?.name || null;
-  
-  rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: ui.agentPrompt(currentAgentName),
+  rl.on("close", () => {
+    disableBracketedPaste();
+    process.exit(0);
   });
-  setReadline(rl);
-
-  // Set up the global agent references so the REPL uses this agent
-  const react = await import("./react.js");
-  react.setMainAgent(agent);
-
-  // readline auto-closes on SIGINT unless the interface has its own listener
-  process.on("SIGINT", handleSigint);
-  rl.on("SIGINT", handleSigint);
-  rl.on("close", () => process.exit(0));
 
   const yolo = isAutoAccept();
-  ui.agentBanner(currentAgentName, agent.getModel(), process.cwd(), yolo);
+  if (agent) {
+    const react = await import("./react.js");
+    react.setMainAgent(agent);
+    ui.agentBanner(currentAgentName, agent.getModel(), process.cwd(), yolo);
+  } else {
+    ui.banner(await getModel(), process.cwd(), yolo);
+    ui.success("hey 👋 i'm tim, what can i help you with?");
+  }
+
   setupLineHandler(initialAttachments);
-  
-  // If there's an initial task, run it
+
   if (initialTask) {
     ui.info(`running initial task: ${initialTask.slice(0, 60)}${initialTask.length > 60 ? "..." : ""}`);
     await processRaw(initialTask, initialAttachments);
@@ -290,6 +318,14 @@ export async function startReplWithAgent(agent, initialAttachments = null, initi
   }
 
   return rl;
+}
+
+export async function startRepl(initialAttachments = null) {
+  return bootRepl({ initialAttachments });
+}
+
+export async function startReplWithAgent(agent, initialAttachments = null, initialTask = "") {
+  return bootRepl({ agent, initialAttachments, initialTask });
 }
 
 export function stopRepl() {

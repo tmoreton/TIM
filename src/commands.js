@@ -517,48 +517,38 @@ export async function runCommand(input) {
       return error("usage: /trigger [list|add|remove|run] [name]");
     }
     case "loc": {
-      const fs = await import("node:fs");
-      const path = await import("node:path");
-      
+      const { execSync } = await import("node:child_process");
       try {
-        const srcExists = fs.existsSync("src");
-        const searchDir = srcExists ? "src" : ".";
-        
-        // Find and count source files
-        const extensions = [".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".scss", ".py", ".rs", ".go", ".java", ".c", ".cpp", ".h"];
-        let totalLines = 0;
-        let fileCount = 0;
-        
-        const walkDir = (dir) => {
-          const entries = fs.readdirSync(dir, { withFileTypes: true });
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-              // Skip node_modules, .git, etc.
-              if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
-                walkDir(fullPath);
-              }
-            } else if (extensions.some(ext => entry.name.endsWith(ext))) {
-              const content = fs.readFileSync(fullPath, "utf8");
-              const lines = content.split("\n").filter(line => {
-                const trimmed = line.trim();
-                return trimmed && !trimmed.startsWith("//") && !trimmed.startsWith("/*") && !trimmed.startsWith("*") && !trimmed.startsWith("#");
-              });
-              totalLines += lines.length;
-              fileCount++;
-            }
-          }
-        };
-        
-        walkDir(searchDir);
-        
-        if (fileCount === 0) {
-          info("no source files found — add .js, .html, .css, .py, etc.");
-        } else {
-          success(`${totalLines.toLocaleString()} lines in ${fileCount} files`);
+        const dir = (await import("node:fs")).existsSync("src") ? "src" : ".";
+        const exts = [
+          "js", "ts", "jsx", "tsx", "mjs", "cjs",
+          "swift", "m", "h", "mm",
+          "java", "kt", "kts", "scala", "groovy",
+          "py", "rb", "php", "pl", "lua", "r", "sh", "bash", "zsh",
+          "go", "rs", "c", "cpp", "cc", "cxx", "hpp", "cs", "fs", "fsx", "vb",
+          "hs", "erl", "ex", "exs", "clj", "cljs",
+          "html", "htm", "css", "scss", "sass", "less", "vue", "svelte",
+          "json", "yaml", "yml", "xml", "sql", "dart", "coffee",
+        ];
+        const skipDirs = [
+          ".git", "node_modules", "dist", "build", ".next", ".venv", "venv",
+          "__pycache__", "target", "vendor", "coverage", ".cache", "Pods",
+          "DerivedData", ".build", "tmp", "temp", "logs",
+        ];
+        const prune = skipDirs.map((d) => `-not -path "*/${d}/*"`).join(" ");
+        let total = 0;
+        for (const ext of exts) {
+          try {
+            const out = execSync(
+              `find ${dir} -type f ${prune} -name "*.${ext}" | xargs cat | grep -v '^[[:space:]]*$' | grep -v '^[[:space:]]*//' | grep -v '^[[:space:]]*/\\*' | grep -v '^[[:space:]]*\\*' | grep -v '^[[:space:]]*#' | wc -l`,
+              { encoding: "utf8", shell: "/bin/sh" }
+            );
+            total += Number(out.trim());
+          } catch {}
         }
-      } catch (e) {
-        error(`could not count lines: ${e.message}`);
+        success(`${total.toLocaleString()} source lines (no blanks/comments)`);
+      } catch {
+        info("no source files found");
       }
       return;
     }

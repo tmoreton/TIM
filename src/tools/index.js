@@ -33,7 +33,6 @@ const coreToolDefs = {
   append_memory: { schema: memory.appendMemorySchema, run: memory.appendMemoryRun },
   notify_email: { schema: email.notifyEmailSchema, run: email.notifyEmailRun },
   receive_email: { schema: email.receiveEmailSchema, run: email.receiveEmailRun },
-  create_email_inbox: { schema: email.createInboxSchema, run: email.createInboxRun },
 };
 
 const hasRequiredEnv = (required) => {

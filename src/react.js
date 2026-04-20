@@ -8,7 +8,7 @@ import { formatMemoryForContext } from "./memory.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
 
-import { stream, streamCompletion, complete, Interrupted } from "./llm.js";
+import { stream, streamCompletion, complete, Interrupted, getContextLimit } from "./llm.js";
 import { ToolCache } from "./cache.js";
 import { isPlanMode } from "./permissions.js";
 import { isCwdTimSource, timPath } from "./paths.js";
@@ -91,7 +91,6 @@ const isParallelSafe = (name) => PARALLEL_SAFE.has(name);
 const DEFAULT_MODEL =
   process.env.TIM_MODEL || "accounts/fireworks/routers/kimi-k2p5-turbo";
 
-const CONTEXT_LIMIT = Number(process.env.TIM_CONTEXT_LIMIT || 128_000);
 const COMPACT_THRESHOLD = 0.6;
 
 
@@ -195,6 +194,9 @@ You have tools: ${toolList}.
   const reset = () => {
     state.messages = [{ role: "system", content: buildSystem() }];
     state.session = state.persist ? createSession(state.model) : null;
+    if (state.session && state.profile?.name) {
+      state.session.agent = state.profile.name;
+    }
     state.usage = { prompt: 0, completion: 0, lastPrompt: 0 };
     state.toolCache.clear();
     rehydrateReadsFromMessages([]);
@@ -206,6 +208,7 @@ You have tools: ${toolList}.
       id: data.id,
       cwd: data.cwd,
       model: data.model || state.model,
+      agent: data.agent || state.profile?.name || null,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };
@@ -232,14 +235,15 @@ You have tools: ${toolList}.
 
         if (!message.tool_calls?.length) {
           if (state.persist) {
+            const limit = getContextLimit(state.model);
             ui.statusFooter({
               lastPromptTokens: state.usage.lastPrompt,
-              limit: CONTEXT_LIMIT,
+              limit,
               sessionId: state.session?.id,
               model: state.model,
             });
-            if (state.usage.lastPrompt / CONTEXT_LIMIT >= COMPACT_THRESHOLD) {
-              ui.info(`context at ${Math.round((state.usage.lastPrompt / CONTEXT_LIMIT) * 100)}% — auto-compacting...`);
+            if (state.usage.lastPrompt / limit >= COMPACT_THRESHOLD) {
+              ui.info(`context at ${Math.round((state.usage.lastPrompt / limit) * 100)}% — auto-compacting...`);
               await compactFn();
             }
           }

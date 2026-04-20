@@ -45,14 +45,20 @@ export const pickProvider = (model = "") => {
 // shown when OPENROUTER_API_KEY is set. Any ID can still be passed manually
 // to /model — this list is just quick-pick shortcuts.
 const MODEL_CATALOG = [
-  { id: "accounts/fireworks/routers/kimi-k2p5-turbo", label: "Kimi K2.5 Turbo", provider: "fireworks" },
-  { id: "openrouter/anthropic/claude-opus-4.7", label: "Claude Opus 4.7", provider: "openrouter" },
-  { id: "openrouter/openai/gpt-5", label: "GPT-5", provider: "openrouter" },
-  { id: "openrouter/moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "openrouter" },
-  { id: "openrouter/google/gemini-3-pro", label: "Gemini 3 Pro", provider: "openrouter" },
-  { id: "openrouter/google/gemma-4-31b-it", label: "Gemma 4 31B", provider: "openrouter" },
-  { id: "openrouter/qwen/qwen3.5-122b-a10b", label: "Qwen 3.5 122B", provider: "openrouter" },
+  { id: "accounts/fireworks/routers/kimi-k2p5-turbo", label: "Kimi K2.5 Turbo", provider: "fireworks", contextLimit: 262_144 },
+  { id: "openrouter/anthropic/claude-opus-4.7", label: "Claude Opus 4.7", provider: "openrouter", contextLimit: 262_144 },
+  { id: "openrouter/openai/gpt-5", label: "GPT-5", provider: "openrouter", contextLimit: 262_144 },
+  { id: "openrouter/moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "openrouter", contextLimit: 262_144 },
+  { id: "openrouter/google/gemini-3-pro", label: "Gemini 3 Pro", provider: "openrouter", contextLimit: 1_000_000 },
+  { id: "openrouter/google/gemma-4-31b-it", label: "Gemma 4 31B", provider: "openrouter", contextLimit: 262_144 },
+  { id: "openrouter/qwen/qwen3.5-122b-a10b", label: "Qwen 3.5 122B", provider: "openrouter", contextLimit: 262_144 },
 ];
+
+export const getContextLimit = (model = "") => {
+  if (process.env.TIM_CONTEXT_LIMIT) return Number(process.env.TIM_CONTEXT_LIMIT);
+  const found = MODEL_CATALOG.find((m) => m.id === model);
+  return found?.contextLimit || 262_144;
+};
 
 export const getModelCatalog = () =>
   MODEL_CATALOG.filter((m) => {
@@ -62,12 +68,15 @@ export const getModelCatalog = () =>
   });
 
 
+const stripReasoning = (messages) =>
+  messages?.map(({ reasoning, reasoning_content, ...rest }) => rest);
+
 const resolveRequest = (body) => {
   const { provider, model } = pickProvider(body.model);
   return {
     url: `${provider.baseUrl}/chat/completions`,
     headers: provider.headers(),
-    body: { ...body, model },
+    body: { ...body, model, messages: stripReasoning(body.messages) },
   };
 };
 
@@ -200,8 +209,6 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
   );
 
   let content = "";
-  let reasoning = "";
-  let reasoningContent = "";
   const toolAcc = [];
   let started = false;
   let responseUsage = null;
@@ -240,9 +247,6 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
         flushLines();
       }
 
-      if (typeof delta.reasoning === "string") reasoning += delta.reasoning;
-      if (typeof delta.reasoning_content === "string") reasoningContent += delta.reasoning_content;
-
       if (delta.tool_calls) {
         if (!started) spin.stop();
         for (const tc of delta.tool_calls) {
@@ -272,8 +276,6 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
     message: {
       role: "assistant",
       content: content || null,
-      ...(reasoning ? { reasoning } : {}),
-      ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
       ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
     },
   };

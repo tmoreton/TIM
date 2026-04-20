@@ -12,6 +12,7 @@ import { loadWorkflows, mergeProfile } from "./workflows.js";
 import { loadAgents } from "./agents.js";
 import { createAgent, resumeSession } from "./react.js";
 import { getModelCatalog } from "./llm.js";
+import { qrToANSI } from "./qrcode.js";
 import { getTools } from "./tools/index.js";
 import { setAutoAccept } from "./permissions.js";
 import { load as loadSession, save as saveSession, list as listSessions, listByFolder } from "./session.js";
@@ -105,6 +106,69 @@ function getTailscaleStatus() {
   }
 }
 
+/** MagicDNS hostname, e.g. "mymac.tail-abcd.ts.net" (no trailing dot). */
+function getTailscaleHostname() {
+  const bin = findTailscale();
+  if (!bin) return null;
+  try {
+    const output = execSync(`"${bin}" status --json 2>/dev/null`, {
+      encoding: "utf8", timeout: 5000,
+    });
+    const status = JSON.parse(output);
+    let dns = status?.Self?.DNSName;
+    if (typeof dns !== "string" || !dns) return null;
+    if (dns.endsWith(".")) dns = dns.slice(0, -1);
+    return dns;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Configures `tailscale serve` so Tailscale terminates HTTPS on :443 and
+ * proxies to our local HTTP server. This gives iOS clients a real TLS cert
+ * (auto-issued by Tailscale) against the MagicDNS hostname, with no cert
+ * management on our side.
+ *
+ * Requires HTTPS to be enabled in the tailnet admin console.
+ */
+function enableTailscaleHttps(localPort) {
+  const bin = findTailscale();
+  if (!bin) return { ok: false, error: "tailscale CLI not found" };
+  try {
+    // Clear any prior serve config so we don't conflict with an old binding.
+    try { execSync(`"${bin}" serve reset`, { timeout: 5000, stdio: "ignore" }); } catch {}
+    execSync(
+      `"${bin}" serve --bg --https=443 http://127.0.0.1:${localPort}`,
+      { encoding: "utf8", timeout: 15_000, stdio: ["pipe", "pipe", "pipe"] }
+    );
+    return { ok: true };
+  } catch (e) {
+    const msg = e?.stderr?.toString?.() || e.message || String(e);
+    return { ok: false, error: msg.trim() };
+  }
+}
+
+function disableTailscaleHttps() {
+  const bin = findTailscale();
+  if (!bin) return;
+  try { execSync(`"${bin}" serve reset`, { timeout: 5000, stdio: "ignore" }); } catch {}
+}
+
+/**
+ * Prints a scannable QR code for `url` to stdout using our vendored pure-JS
+ * encoder (see src/qrcode.js). Zero runtime deps.
+ */
+function printQRCode(url) {
+  try {
+    process.stdout.write(qrToANSI(url));
+    return true;
+  } catch (e) {
+    log(`⚠ could not render QR: ${e.message}`);
+    return false;
+  }
+}
+
 // ============================================================================
 // SCHEDULER (CRON TRIGGERS)
 // ============================================================================
@@ -150,29 +214,29 @@ async function fireTrigger(trigger) {
   const workflows = loadWorkflows();
   const workflow = workflows[trigger.workflow];
   if (!workflow) {
-    log(`✗ ${trigger.name}: workflow "${trigger.workflow}" not found`);
+    log(`\x1b[38;2;20;184;166m✗\x1b[0m ${trigger.name}: workflow "${trigger.workflow}" not found`);
     recordRun(trigger.name, { startedAt: ts(), finishedAt: ts(), status: "error", error: `workflow "${trigger.workflow}" not found` });
     return;
   }
   const agents = loadAgents();
   const agent = agents[workflow.agent];
   if (!agent) {
-    log(`✗ ${trigger.name}: agent "${workflow.agent}" not found`);
+    log(`\x1b[38;2;20;184;166m✗\x1b[0m ${trigger.name}: agent "${workflow.agent}" not found`);
     recordRun(trigger.name, { startedAt: ts(), finishedAt: ts(), status: "error", error: `agent "${workflow.agent}" not found` });
     return;
   }
 
   const task = trigger.task || workflow.task || `Run the ${workflow.name} workflow.`;
   const started = ts();
-  log(`→ firing ${trigger.name} (${workflow.name} → ${agent.name})`);
+  log(`\x1b[38;2;20;184;166m→\x1b[0m firing ${trigger.name} (${workflow.name} → ${agent.name})`);
   try {
     const sub = await createAgent(mergeProfile(agent, workflow));
     await sub.turn(task);
     const finished = ts();
-    log(`✓ ${trigger.name} done (${Math.round((new Date(finished) - new Date(started)) / 1000)}s)`);
+    log(`\x1b[38;2;20;184;166m✓\x1b[0m ${trigger.name} done (${Math.round((new Date(finished) - new Date(started)) / 1000)}s)`);
     recordRun(trigger.name, { startedAt: started, finishedAt: finished, status: "ok" });
   } catch (e) {
-    log(`✗ ${trigger.name} failed: ${e.message}`);
+    log(`\x1b[38;2;20;184;166m✗\x1b[0m ${trigger.name} failed: ${e.message}`);
     recordRun(trigger.name, { startedAt: started, finishedAt: ts(), status: "error", error: e.message });
   }
 }
@@ -196,11 +260,9 @@ async function tick() {
     if (precheck) {
       const { work, count } = await hasWork(precheck);
       if (!work) {
-        log(`· ${t.name} precheck (${precheck}): 0 items — skipping`);
         continue;
       }
-      const n = typeof count === "number" ? count : "?";
-      log(`· ${t.name} precheck (${precheck}): ${n} item(s) — firing`);
+
     }
 
     await fireTrigger(t);
@@ -209,9 +271,8 @@ async function tick() {
 
 function startScheduler() {
   const triggers = loadTriggers();
-  log(`scheduler: ${triggers.length} trigger(s) loaded`);
   for (const t of triggers) {
-    log(`  • ${t.name} [${t.schedule}] → ${t.workflow}${t.enabled ? "" : " (disabled)"}`);
+    log(`• \x1b[38;2;20;184;166m${t.name}\x1b[0m [${t.schedule}] → ${t.workflow}${t.enabled ? "" : " (disabled)"}`);
   }
 
   tick().catch((e) => log(`tick error: ${e.message}`));
@@ -489,7 +550,7 @@ async function createHttpServer() {
     httpServer,
     listen: (host, port) => new Promise((resolve, reject) => {
       httpServer.listen(port, host, () => {
-        log(`server listening on http://${host}:${port}`);
+        log(`server listening on \x1b[38;2;20;184;166mhttp://${host}:${port}\x1b[0m`);
         resolve();
       });
       httpServer.on("error", reject);
@@ -508,24 +569,25 @@ async function createHttpServer() {
 export async function start({ tailscale = false } = {}) {
   setAutoAccept(true);
 
-  let bindHost = "0.0.0.0";
-  
+  // Always bind to 0.0.0.0 so the Tailscale peer can reach us at the 100.x
+  // IP and localhost clients still work. Tailscale "serve" (if enabled)
+  // terminates HTTPS on :443 and proxies to 127.0.0.1:<port>.
+  const bindHost = "0.0.0.0";
+  let tsIp = null;
+  let tsHost = null;
+  let httpsEnabled = false;
+
   if (tailscale) {
     if (!hasTailscaleCLI()) {
       log("⚠ tailscale CLI not found");
       log("  Install: https://tailscale.com/download");
     } else {
-      const tsIp = getTailscaleIP();
-      if (tsIp) {
-        bindHost = tsIp;
-        log(`tailscale IP detected: ${tsIp}`);
-      } else {
+      tsIp = getTailscaleIP();
+      tsHost = getTailscaleHostname();
+      if (!tsIp) {
         const status = getTailscaleStatus();
-        if (status) {
-          log("⚠ tailscale running but no 100.x IP found");
-        } else {
-          log("⚠ tailscale not logged in — run: tailscale up");
-        }
+        if (status) log("⚠ tailscale running but no 100.x IP found");
+        else log("⚠ tailscale not logged in — run: tailscale up");
       }
     }
   }
@@ -537,11 +599,47 @@ export async function start({ tailscale = false } = {}) {
   }
   await server.listen(bindHost, port);
 
+  if (tailscale && tsHost) {
+    const result = enableTailscaleHttps(port);
+    if (result.ok) {
+      httpsEnabled = true;
+    } else {
+      log(`⚠ could not enable Tailscale HTTPS: ${result.error}`);
+      log("  Enable HTTPS certs: https://tailscale.com/kb/1153/enabling-https");
+    }
+  }
+
+  // Friendly URL banner for the iOS app + any other remote clients.
+  // Ports are spelled out so it's obvious localhost/LAN uses HTTP :${port}
+  // while the Tailscale HTTPS endpoint is always on :443 (terminated by
+  // `tailscale serve`, proxied back to 127.0.0.1:${port}).
+  const pad = (s, n) => s + " ".repeat(Math.max(0, n - s.length));
+  log("──────────────────────────────────────────────");
+  log(`  local    ${pad(`\x1b[38;2;20;184;166mhttp://localhost:${port}\x1b[0m`, 40)}  (HTTP :${port})`);
+  if (tsIp) log(`  tailnet  ${pad(`\x1b[38;2;20;184;166mhttp://${tsIp}:${port}\x1b[0m`, 40)}  (HTTP :${port})`);
+  if (tsHost) {
+    if (httpsEnabled) {
+      log(`  tailnet  ${pad(`\x1b[38;2;20;184;166mhttps://${tsHost}\x1b[0m`, 40)}  (HTTPS :443 ← use this in the iOS app)`);
+    } else {
+      log(`  tailnet  ${pad(`\x1b[38;2;20;184;166mhttp://${tsHost}:${port}\x1b[0m`, 40)}  (HTTP :${port})`);
+    }
+  }
+  log("──────────────────────────────────────────────");
+
+  // Print a QR code of the best URL for the iOS app to scan.
+  const iosUrl = (tsHost && httpsEnabled) ? `https://${tsHost}`
+               : tsHost                   ? `http://${tsHost}:${port}`
+               : tsIp                      ? `http://${tsIp}:${port}`
+               : `http://localhost:${port}`;
+  log(`  scan in iOS app → \x1b[38;2;20;184;166m${iosUrl}\x1b[0m`);
+  printQRCode(iosUrl);
+
   const schedulerHandle = startScheduler();
 
   const shutdown = (sig) => {
     log(`received ${sig} — shutting down`);
     clearInterval(schedulerHandle);
+    if (httpsEnabled) disableTailscaleHttps();
     server.close().then(() => process.exit(0));
   };
   process.on("SIGINT", () => shutdown("SIGINT"));

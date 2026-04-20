@@ -67,30 +67,6 @@ export const receiveEmailSchema = {
   }
 };
 
-export const createInboxSchema = {
-  type: "function",
-  function: {
-    name: "create_email_inbox",
-    description: "Create a new AgentMail inbox for receiving emails. Returns the inbox ID and email address.",
-    parameters: {
-      type: "object",
-      properties: {
-        username: {
-          type: "string",
-          description: "Username for the inbox (e.g., 'my-agent' creates my-agent@agentmail.to)"
-        },
-        domain: {
-          type: "string",
-          description: "Domain for the inbox (default: agentmail.to)",
-          default: "agentmail.to"
-        }
-      },
-      required: ["username"]
-    }
-  }
-};
-
-
 function markdownToHtml(md) {
   return md
     .replace(/^### (.*$)/gim, "<h3>$1</h3>")
@@ -351,28 +327,4 @@ export async function receiveEmailRun(args = {}) {
   };
 }
 
-export async function createInboxRun(args) {
-  if (!process.env.AGENTMAIL_API_KEY) {
-    throw new Error("AGENTMAIL_API_KEY not set. Get one at https://agentmail.to");
-  }
 
-  const { username, domain = "agentmail.to" } = args;
-
-  const inbox = await fetchAgentMail("/inboxes", {
-    method: "POST",
-    body: JSON.stringify({ username, domain }),
-  });
-
-  // Store the inbox ID if this is the first one
-  if (!process.env.AGENTMAIL_INBOX_ID) {
-    console.log(`[email] Created inbox ${inbox.id} (${inbox.address}). Set AGENTMAIL_INBOX_ID to use it as default.`);
-  }
-
-  return {
-    id: inbox.id,
-    address: inbox.address,
-    username: inbox.username,
-    domain: inbox.domain,
-    message: `Inbox created: ${inbox.address}. Store the ID (${inbox.id}) in AGENTMAIL_INBOX_ID to receive emails here.`,
-  };
-}

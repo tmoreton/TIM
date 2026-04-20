@@ -308,7 +308,7 @@ export function confirmPrompt() {
 
 export const info = (msg) => console.log(c.dim(`  ${msg}`));
 export const error = (msg) => console.log(c.red(`  ✗ ${msg}`));
-export const success = (msg) => console.log(c.green(`  ✓ ${msg}`));
+export const success = (msg) => console.log(c.teal(`  ✓ ${msg}`));
 
 export function exitHint(sessionId) {
   if (!sessionId) return;
