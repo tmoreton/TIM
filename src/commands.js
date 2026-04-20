@@ -595,10 +595,23 @@ export async function runCommand(input) {
     case "loc": {
       const { execSync } = await import("node:child_process");
       try {
-        const command = 'find src -name "*.js" -exec cat {} + | grep -v "^[[:space:]]*\\/\\/" | grep -v "^[[:space:]]*\\/\\*" | grep -v "^[[:space:]]*\\*\\/" | grep -v "^[[:space:]]*$" | wc -l';
+        // Count lines in common source directories, or fall back to current dir
+        const srcExists = require("fs").existsSync("src");
+        const searchDir = srcExists ? "src" : ".";
+        
+        // Count all source code files (js, ts, html, css, py, rs, go, etc.)
+        // Excludes comments and blank lines
+        const command = `find ${searchDir} -type f \\( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o -name "*.html" -o -name "*.css" -o -name "*.scss" -o -name "*.py" -o -name "*.rs" -o -name "*.go" -o -name "*.java" -o -name "*.c" -o -name "*.cpp" -o -name "*.h" \\) -exec cat {} + 2>/dev/null | grep -v "^[[:space:]]*\\/\\/" | grep -v "^[[:space:]]*\\/\\*" | grep -v "^[[:space:]]*\\*\\/" | grep -v "^[[:space:]]*#" | grep -v "^[[:space:]]*\\-\{3,\}" | grep -v "^[[:space:]]*$" | wc -l`;
+        
         const result = execSync(command, { encoding: 'utf8', cwd: process.cwd() });
         const lines = result.trim().split(/\s+/)[0];
-        success(`${Number(lines).toLocaleString()} source lines`);
+        const count = Number(lines);
+        
+        if (count === 0) {
+          info("no source files found — add .js, .html, .css, .py, etc.");
+        } else {
+          success(`${count.toLocaleString()} source lines`);
+        }
       } catch {
         error("could not count lines");
       }
