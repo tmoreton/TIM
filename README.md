@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="tim.svg" width="50%" alt="HeyTim">
+  <img src="https://raw.githubusercontent.com/tmoreton/heytim-web/main/tim.svg" width="50%" alt="HeyTim">
   <br>
   <em>the minimalist coding companion</em>
   <br><br>
