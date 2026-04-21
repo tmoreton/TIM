@@ -340,7 +340,7 @@ You have tools: ${toolList}.
         }
       }
     } finally {
-      if (state.session) saveSession(state.session, state.messages, state.usage);
+      if (state.session && state.persist) saveSession(state.session, state.messages, state.usage);
       try { commitHistory(`turn: ${String(userInput).slice(0, 80)}`); } catch {}
     }
   };
@@ -378,7 +378,7 @@ You have tools: ${toolList}.
       { role: "assistant", content: "Got it — continuing from the summary." },
       ...tail,
     ];
-    if (state.session) saveSession(state.session, state.messages, state.usage);
+    if (state.session && state.persist) saveSession(state.session, state.messages, state.usage);
     return `Compacted. Kept ${state.messages.length} messages.`;
   };
 

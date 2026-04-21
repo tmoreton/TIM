@@ -85,7 +85,7 @@ const FLAG_ROWS = [
   ["tim trigger add <name>", "create a scheduled trigger (interactive)"],
   ["tim trigger remove <name>", "remove a scheduled trigger"],
   ["tim trigger run <name>", "run a trigger immediately"],
-  ["tim start", "start the cron scheduler daemon"],
+  ["tim start", "start the cron scheduler daemon (auto-restarts on crash)"],
   ["tim run <workflow|agent> \"task\"", "run a workflow or agent headlessly"],
 ];
 

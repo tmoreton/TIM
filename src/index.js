@@ -403,9 +403,10 @@ if (argv[0] === "env") {
 
 // tim start / tim server — long-running scheduler + optional HTTP/WebSocket server
 // Both commands do the same thing. Use --tailscale to expose on your Tailscale IP.
+// Server auto-restarts if it crashes (up to 10 attempts).
 //
 // Examples:
-//   tim start              # Scheduler only, local
+//   tim start              # Scheduler only, local (auto-restarts on crash)
 //   tim start --tailscale  # Scheduler + server on Tailscale IP
 //   tim server             # Same as tim start
 //   tim server --tailscale # Same as tim start --tailscale

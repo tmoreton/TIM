@@ -434,7 +434,7 @@ async function createHttpServer() {
         await sub.turn(message, null, attachmentPaths);
         const last = sub.state.messages.filter(m => m.role === "assistant" && !m.tool_calls?.length && m.content).pop();
         const sessionData = sub.state.session;
-        if (sessionData) saveSession(sessionData, sub.state.messages, sub.state.usage);
+        if (sessionData && sub.state.persist) saveSession(sessionData, sub.state.messages, sub.state.usage);
 
         res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders });
         res.end(JSON.stringify({ response: last?.content || "", sessionId: sessionData?.id, messages: sub.state.messages }));
@@ -541,7 +541,7 @@ async function createHttpServer() {
 
           try {
             await sub.turn(msg.content);
-            if (sub.state.session) saveSession(sub.state.session, sub.state.messages, sub.state.usage);
+            if (sub.state.session && sub.state.persist) saveSession(sub.state.session, sub.state.messages, sub.state.usage);
             send({ type: "done" });
           } catch (e) {
             send({ type: "error", error: e.message });
@@ -575,10 +575,13 @@ async function createHttpServer() {
 }
 
 // ============================================================================
-// MAIN ENTRY: tim start [--tailscale]
+// MAIN ENTRY: tim start [--tailscale] [--watch]
 // ============================================================================
 
-export async function start({ tailscale = false } = {}) {
+const MAX_RESTART_ATTEMPTS = 10;
+const RESTART_DELAY_MS = 5000;
+
+async function runServer({ tailscale = false } = {}) {
   setAutoAccept(true);
 
   // Always bind to 0.0.0.0 so the Tailscale peer can reach us at the 100.x
@@ -658,4 +661,32 @@ export async function start({ tailscale = false } = {}) {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   await new Promise(() => {});
+}
+
+export async function start({ tailscale = false } = {}) {
+  // Auto-restart on crashes (up to 10 attempts)
+  let attempts = 0;
+  
+  while (attempts < MAX_RESTART_ATTEMPTS) {
+    attempts++;
+    if (attempts > 1) {
+      log(`\x1b[38;2;245;158;11m⚠ restart attempt ${attempts}/${MAX_RESTART_ATTEMPTS}\x1b[0m`);
+    }
+    
+    try {
+      await runServer({ tailscale });
+      // If runServer returns cleanly, exit the loop
+      break;
+    } catch (e) {
+      log(`\x1b[38;2;239;68;68m✗ server crashed: ${e.message}\x1b[0m`);
+      
+      if (attempts >= MAX_RESTART_ATTEMPTS) {
+        log(`\x1b[38;2;239;68;68m✗ max restart attempts reached, giving up\x1b[0m`);
+        process.exit(1);
+      }
+      
+      log(`\x1b[38;2;245;158;11m↻ waiting ${RESTART_DELAY_MS}ms before restart...\x1b[0m`);
+      await new Promise(r => setTimeout(r, RESTART_DELAY_MS));
+    }
+  }
 }
