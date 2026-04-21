@@ -1,5 +1,6 @@
-// Screenshot tools using native macOS screencapture (desktop) or Chrome CLI (web pages)
-// No Playwright/Puppeteer required — works with built-in system tools.
+// Screenshot tools using stock OS utilities (desktop) or Chrome CLI (web pages).
+// No Playwright/Puppeteer required. Desktop capture supports macOS, Linux
+// (scrot / gnome-screenshot / ImageMagick import), and Windows (PowerShell).
 
 import { execSync, exec } from "node:child_process";
 import fs from "node:fs";
@@ -10,16 +11,24 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 
 // Cap the long edge of captured images so base64-embedded payloads don't blow
-// past the model's context limit. Retina desktop captures can be 5+ MB PNG
-// (~7 MB as base64 = ~1.8M tokens by char/4); 1536px keeps them legible while
-// dropping the payload by an order of magnitude. Uses stock-macOS `sips`.
+// past the model's context limit. Retina captures can be 5+ MB PNG (~7 MB as
+// base64 = ~1.8M tokens by char/4); 1536px keeps them legible while dropping
+// the payload by an order of magnitude. Uses `sips` on macOS and ImageMagick
+// `mogrify` on Linux; silently no-ops if neither is present.
 const MAX_IMAGE_DIM = 1536;
 
 async function downscale(filePath, maxDim = MAX_IMAGE_DIM) {
+  const cmd =
+    process.platform === "darwin"
+      ? `sips -Z ${maxDim} "${filePath}" --out "${filePath}"`
+      : process.platform === "linux"
+      ? `mogrify -resize ${maxDim}x${maxDim}\\> "${filePath}"`
+      : null;
+  if (!cmd) return;
   try {
-    await execAsync(`sips -Z ${maxDim} "${filePath}" --out "${filePath}"`, { timeout: 10000 });
+    await execAsync(cmd, { timeout: 10000 });
   } catch {
-    // sips missing or failed — leave the original file, caller can still use it.
+    // Resize tool missing or failed — leave the original file.
   }
 }
 
@@ -96,39 +105,86 @@ async function captureWebpage(url, outputPath, options = {}) {
   return outputPath;
 }
 
-async function captureDesktop(options = {}) {
-  const { display = 1, selection = false } = options;
-  
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const outputDir = process.env.TIM_DIR 
-    ? path.join(process.env.TIM_DIR, "images")
-    : path.join(os.homedir(), ".tim", "images");
-  
-  fs.mkdirSync(outputDir, { recursive: true });
-  
-  // Use filename if provided, otherwise generate one
-  const safeFilename = options.filename 
-    ? options.filename.replace(/[^a-zA-Z0-9._-]/g, "_") + ".png"
-    : `screenshot-${ts}.png`;
-  
-  const outputPath = path.join(outputDir, safeFilename);
-  
-  let args = "-x"; // no sound
-  
-  if (selection) {
-    args += " -i"; // interactive selection
-  } else if (display === "all") {
-    // -D all not valid, use without -D flag for all displays
-    args += "";
-  } else {
-    // Display number (1 for main, 2 for secondary, etc.)
+async function captureDesktopMac(outputPath, { display, selection }) {
+  let args = "-x"; // no shutter sound
+  if (selection) args += " -i";
+  else if (display !== "all") {
     const displayNum = typeof display === "number" ? display : 1;
     args += ` -D ${displayNum}`;
   }
-  
-  args += ` "${outputPath}"`;
-  
-  await execAsync(`screencapture ${args}`, { timeout: 60000 });
+  // display === "all" → omit -D and screencapture grabs every display.
+  await execAsync(`screencapture ${args} "${outputPath}"`, { timeout: 60000 });
+}
+
+// Try common Linux screenshot tools in order. First one that succeeds wins.
+// `display` is ignored — monitor selection on Linux varies too much across
+// tools / X11 / Wayland to implement reliably here.
+async function captureDesktopLinux(outputPath, { selection }) {
+  const attempts = [
+    selection ? `scrot -s "${outputPath}"` : `scrot "${outputPath}"`,
+    selection ? `gnome-screenshot -a -f "${outputPath}"` : `gnome-screenshot -f "${outputPath}"`,
+    selection ? null : `import -window root "${outputPath}"`, // ImageMagick; no interactive mode
+  ].filter(Boolean);
+
+  let lastError;
+  for (const cmd of attempts) {
+    try {
+      await execAsync(cmd, { timeout: 60000 });
+      if (fs.existsSync(outputPath)) return;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw new Error(
+    `No Linux screenshot tool worked. Install scrot, gnome-screenshot, or imagemagick. ` +
+      `(last error: ${lastError?.message || "none"})`,
+  );
+}
+
+// PowerShell + System.Drawing captures the full virtual screen (all monitors).
+// No interactive selection — the Windows Snipping Tool CLI is unreliable.
+async function captureDesktopWindows(outputPath, { selection }) {
+  if (selection) {
+    throw new Error("Interactive selection is not supported on Windows.");
+  }
+  const psScript = [
+    "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;",
+    "$vs = [System.Windows.Forms.SystemInformation]::VirtualScreen;",
+    "$bmp = New-Object System.Drawing.Bitmap $vs.Width, $vs.Height;",
+    "$g = [System.Drawing.Graphics]::FromImage($bmp);",
+    "$g.CopyFromScreen($vs.Location, [System.Drawing.Point]::Empty, $bmp.Size);",
+    `$bmp.Save('${outputPath.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png);`,
+  ].join(" ");
+  await execAsync(`powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"')}"`, {
+    timeout: 60000,
+  });
+}
+
+async function captureDesktop(options = {}) {
+  const { display = 1, selection = false } = options;
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const outputDir = process.env.TIM_DIR
+    ? path.join(process.env.TIM_DIR, "images")
+    : path.join(os.homedir(), ".tim", "images");
+
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const safeFilename = options.filename
+    ? options.filename.replace(/[^a-zA-Z0-9._-]/g, "_") + ".png"
+    : `screenshot-${ts}.png`;
+
+  const outputPath = path.join(outputDir, safeFilename);
+
+  if (process.platform === "darwin") {
+    await captureDesktopMac(outputPath, { display, selection });
+  } else if (process.platform === "linux") {
+    await captureDesktopLinux(outputPath, { selection });
+  } else if (process.platform === "win32") {
+    await captureDesktopWindows(outputPath, { selection });
+  } else {
+    throw new Error(`capture_desktop is not supported on ${process.platform}`);
+  }
 
   if (!fs.existsSync(outputPath)) {
     throw new Error("Screenshot failed - no output file created");
@@ -185,13 +241,13 @@ export const captureDesktopSchema = {
   type: "function",
   function: {
     name: "capture_desktop",
-    description: "Capture a screenshot of the user's current screen/desktop and attach it for visual analysis. Use this whenever the user asks what's on their screen, what they're looking at, wants you to see an error/window/app they have open, or mentions anything visual on their computer they want help with (e.g. 'what's on my screen', 'can you see this', 'look at this', 'what does this look like'). The image is attached automatically — describe what you see after it's returned. On macOS only; uses the native screencapture command.",
+    description: "Capture a screenshot of the user's current screen/desktop and attach it for visual analysis. Use this whenever the user asks what's on their screen, what they're looking at, wants you to see an error/window/app they have open, or mentions anything visual on their computer they want help with (e.g. 'what's on my screen', 'can you see this', 'look at this', 'what does this look like'). The image is attached automatically — describe what you see after it's returned. Works on macOS (screencapture), Linux (scrot / gnome-screenshot / imagemagick), and Windows (PowerShell).",
     parameters: {
       type: "object",
       properties: {
         display: {
           type: "number",
-          description: "Display number to capture (1 = main display, 2 = secondary, etc.). Omit to capture all displays.",
+          description: "Display number to capture (1 = main, 2 = secondary, etc.). Omit to capture all displays. macOS only — ignored on Linux/Windows, which capture all displays.",
         },
         selection: {
           type: "boolean",
