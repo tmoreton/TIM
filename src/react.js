@@ -91,7 +91,24 @@ const isParallelSafe = (name) => PARALLEL_SAFE.has(name);
 const DEFAULT_MODEL =
   process.env.TIM_MODEL || "accounts/fireworks/routers/kimi-k2p5-turbo";
 
+// End-of-turn compaction target (based on reported usage from last response).
 const COMPACT_THRESHOLD = 0.6;
+
+// Find the last "regular" user message (a turn boundary) — skipping the
+// auto-generated attachment user messages we push after image-returning tools.
+// Keeps tool_call / tool_result pairs together when compacting.
+const findSafeTailStart = (messages) => {
+  for (let i = messages.length - 1; i >= 1; i--) {
+    const m = messages[i];
+    if (m.role !== "user") continue;
+    const firstText = Array.isArray(m.content)
+      ? m.content.find((c) => c?.type === "text")?.text
+      : m.content;
+    if (typeof firstText === "string" && firstText.startsWith("(generated ")) continue;
+    return i;
+  }
+  return -1;
+};
 
 
 // Agents always get these tools so orchestration + memory upkeep work even
@@ -203,7 +220,19 @@ You have tools: ${toolList}.
   };
 
   const resume = (data) => {
-    state.messages = data.messages || [{ role: "system", content: buildSystem() }];
+    // Always rebuild the system message on resume. The stored one was baked
+    // at session-creation time and goes stale as tools are added/removed or
+    // the profile's system prompt changes — the model follows the system
+    // prompt's tool list literally, so a stale list produces "I don't have
+    // that tool" refusals even when the schema is actually registered.
+    const freshSystem = { role: "system", content: buildSystem() };
+    const stored = data.messages;
+    if (Array.isArray(stored) && stored.length > 0) {
+      state.messages =
+        stored[0]?.role === "system" ? [freshSystem, ...stored.slice(1)] : [freshSystem, ...stored];
+    } else {
+      state.messages = [freshSystem];
+    }
     state.session = {
       id: data.id,
       cwd: data.cwd,
@@ -235,7 +264,6 @@ You have tools: ${toolList}.
 
         if (!message.tool_calls?.length) {
           if (state.persist) {
-            const limit = getContextLimit(state.model);
             ui.statusFooter({
               lastPromptTokens: state.usage.lastPrompt,
               limit,
@@ -347,8 +375,12 @@ You have tools: ${toolList}.
 
   const compactFn = async () => {
     const system = state.messages[0];
-    const tail = state.messages.slice(-4);
-    const middle = state.messages.slice(1, -4);
+    // Keep the current turn intact (last regular user message onward) so we
+    // never orphan a tool-result from its assistant.tool_calls pairing.
+    const tailStart = findSafeTailStart(state.messages);
+    if (tailStart < 0) return "Nothing to compact yet.";
+    const tail = state.messages.slice(tailStart);
+    const middle = state.messages.slice(1, tailStart);
     if (middle.length < 4) return "Nothing to compact yet.";
 
     const summaryPrompt = [

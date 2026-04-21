@@ -361,10 +361,7 @@ if (argv[0] === "env") {
   const features = [
     group("Web search",       ["TAVILY_API_KEY"]),
     group("Image generation", ["OPENROUTER_API_KEY"]),
-    group("AgentMail (send + receive, threaded replies)",
-      ["AGENTMAIL_API_KEY", "AGENTMAIL_INBOX_ID"],
-      ["AGENTMAIL_WHITELIST"]),
-    group("SMTP (send fallback)",
+    group("SMTP (send)",
       ["SMTP_HOST", "SMTP_USER", "SMTP_PASS"],
       ["SMTP_PORT", "SMTP_SECURE", "SMTP_FROM"]),
     group("YouTube Data API (used by youtube-daily agent)",

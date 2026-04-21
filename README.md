@@ -20,9 +20,6 @@ npm link # installs the `tim` binary globally
 tim /env set FIREWORKS_API_KEY=...
 tim /env set OPENROUTER_API_KEY=...
 tim /env set TAVILY_API_KEY=...
-tim /env set AGENTMAIL_API_KEY=...
-tim /env set AGENTMAIL_INBOX_ID=...
-tim /env set AGENTMAIL_WHITELIST=...
 ```
 
 ## Tools
@@ -41,8 +38,6 @@ tim /env set AGENTMAIL_WHITELIST=...
 | `web_search` | web search via Tavily (requires `TAVILY_API_KEY`) |
 | `update_memory` | overwrite agent memory file |
 | `append_memory` | append to agent memory file |
-| `notify_email` | send email (AgentMail or SMTP) |
-| `receive_email` | poll inbox for new emails (AgentMail) |
 
 ## Agents
 
@@ -77,7 +72,7 @@ src/
 ├── history.js        # Git snapshot of $TIM_DIR before destructive writes
 ├── cache.js          # LRU cache for deterministic tools (read/grep/list)
 ├── mcp.js            # MCP server management: connect, tools, lifecycle
-├── smtp.js           # SMTP fallback for email when AgentMail unavailable
+├── server.js         # HTTP server, scheduler daemon
 ├── paths.js          # TIM_SOURCE_ROOT + path helpers
 └── tools/
     ├── index.js      # Tool registry: core + custom + MCP merge
@@ -87,7 +82,6 @@ src/
     ├── spawn.js      # spawn_workflow: run sub-agents headlessly
     ├── web_fetch.js  # fetch + extract web pages
     ├── web_search.js # Tavily web search
-    ├── email.js      # notify_email, receive_email, create_email_inbox
     ├── memory.js     # update_memory, append_memory
     └── custom.js     # Load custom tools from .tim/tools/*.js
 ```
@@ -168,6 +162,3 @@ TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
 | `TIM_MODEL` | `accounts/fireworks/routers/kimi-k2p5-turbo` | model ID |
 | `TIM_CONTEXT_LIMIT` | `128000` | context window (for `/compact` warning) |
 | `TAVILY_API_KEY` | — | Web search API |
-| `AGENTMAIL_API_KEY` | — | Email send/receive |
-| `AGENTMAIL_INBOX_ID` | — | Default inbox for receiving |
-| `AGENTMAIL_WHITELIST` | — | Allowed sender emails/domains (required)

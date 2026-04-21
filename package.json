@@ -9,7 +9,11 @@
     "tim": "./src/index.js"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node test/screenshot-flow.test.js && node test/screenshot-e2e.test.js",
+    "test:screenshot": "node test/screenshot-flow.test.js",
+    "test:e2e": "node test/screenshot-e2e.test.js",
+    "test:vision": "node test/screenshot-llm-integration.test.js"
   },
   "dependencies": {},
   "engines": {

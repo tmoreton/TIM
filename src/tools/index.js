@@ -14,7 +14,7 @@ import { connectMcpServers, getMcpTools } from "../mcp.js";
 import * as webFetch from "./web_fetch.js";
 import * as webSearch from "./web_search.js";
 import * as memory from "./memory.js";
-import * as email from "./email.js";
+import * as screenshot from "./screenshot.js";
 
 // Core tools. `requiredEnv` (string | string[]) gates registration — tools
 // with missing env vars are silently dropped so the model doesn't see them.
@@ -31,8 +31,8 @@ const coreToolDefs = {
   web_search: { schema: webSearch.schema, run: webSearch.run, requiredEnv: webSearch.requiredEnv },
   update_memory: { schema: memory.updateMemorySchema, run: memory.updateMemoryRun },
   append_memory: { schema: memory.appendMemorySchema, run: memory.appendMemoryRun },
-  notify_email: { schema: email.notifyEmailSchema, run: email.notifyEmailRun },
-  receive_email: { schema: email.receiveEmailSchema, run: email.receiveEmailRun },
+  capture_webpage: { schema: screenshot.captureWebpageSchema, run: screenshot.captureWebpageRun },
+  capture_desktop: { schema: screenshot.captureDesktopSchema, run: screenshot.captureDesktopRun },
 };
 
 const hasRequiredEnv = (required) => {

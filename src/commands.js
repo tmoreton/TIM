@@ -54,10 +54,7 @@ const HELP_ROWS = [
 // Note: tim <agent> starts interactive chat with that agent (not listed in /help to avoid confusion)
 
 const EMAIL_ENV_HELP = [
-  ["AGENTMAIL_API_KEY", "AgentMail API key for send + receive (recommended)"],
-  ["AGENTMAIL_INBOX_ID", "Default AgentMail inbox (send from + receive to)"],
-  ["AGENTMAIL_WHITELIST", "Allowed sender emails/domains for incoming (required)"],
-  ["SMTP_HOST", "SMTP server hostname (fallback)"],
+  ["SMTP_HOST", "SMTP server hostname"],
   ["SMTP_USER", "SMTP username"],
   ["SMTP_PASS", "SMTP password"],
   ["SMTP_PORT", "SMTP port (default: 587)"],
@@ -261,8 +258,6 @@ export async function runCommand(input) {
       if (sub === "email") {
         console.log();
         console.log("  " + c.bold(c.teal("email configuration")));
-        console.log("  " + c.dim("Sending: AGENTMAIL_API_KEY (recommended) or SMTP_* vars"));
-        console.log("  " + c.dim("Receiving: AGENTMAIL_API_KEY + AGENTMAIL_WHITELIST (required)"));
         console.log();
         const pad = Math.max(...EMAIL_ENV_HELP.map((r) => r[0].length)) + 2;
         for (const [k, v] of EMAIL_ENV_HELP) {

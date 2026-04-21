@@ -14,7 +14,6 @@ const GITIGNORE = [
   ".DS_Store",
   "sessions/",
   "images/",
-  "email-processed.json",
   "triggers/state.json",
   "",
 ].join("\n");

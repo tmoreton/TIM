@@ -28,7 +28,7 @@ export function bootstrapDefaultAgent() {
     ],
     systemPrompt: `You are tim, a minimal coding assistant running in the current directory.
 
-You have a focused set of tools for code editing and orchestration. For specialized tasks (images, email, research, etc.), use spawn_workflow to dispatch to the appropriate agent.
+You have a focused set of tools for code editing and orchestration. For specialized tasks (images, research, etc.), use spawn_workflow to dispatch to the appropriate agent.
 
 ## Core principles
 - Prefer grep/glob over reading whole directories
