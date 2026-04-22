@@ -254,7 +254,7 @@ export async function streamCompletion({ model, messages, toolSchemas, usage }, 
           const i = tc.index ?? 0;
           toolAcc[i] ||= { id: "", type: "function", function: { name: "", arguments: "" } };
           if (tc.id) toolAcc[i].id = tc.id;
-          if (tc.function?.name) toolAcc[i].function.name += tc.function.name;
+          if (tc.function?.name) toolAcc[i].function.name = tc.function.name;
           if (tc.function?.arguments) toolAcc[i].function.arguments += tc.function.arguments;
         }
       }
