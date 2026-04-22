@@ -4,7 +4,7 @@ import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { agentTurn, getModel, getSessionId, resetMessages, resumeSession } from "./react.js";
+import { agentTurn, getModel, getSessionId } from "./react.js";
 import { Interrupted } from "./llm.js";
 import { isCommand, runCommand } from "./commands.js";
 import { setReadline, isAutoAccept } from "./permissions.js";

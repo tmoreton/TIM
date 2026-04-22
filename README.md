@@ -75,15 +75,14 @@ src/
 ├── server.js         # HTTP server, scheduler daemon
 ├── paths.js          # TIM_SOURCE_ROOT + path helpers
 └── tools/
-    ├── index.js      # Tool registry: core + custom + MCP merge
+    ├── index.js      # Tool registry: core + MCP merge
     ├── fs.js         # list_files, read_file, edit_file, write_file
     ├── bash.js       # shell command execution with timeout
     ├── search.js     # grep and glob search
     ├── spawn.js      # spawn_workflow: run sub-agents headlessly
     ├── web_fetch.js  # fetch + extract web pages
     ├── web_search.js # Tavily web search
-    ├── memory.js     # update_memory, append_memory
-    └── custom.js     # Load custom tools from .tim/tools/*.js
+    └── memory.js     # update_memory, append_memory
 ```
 
 ---
@@ -109,8 +108,6 @@ TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
 │   └── 2024-01-16-def456.json
 ├── triggers/               # Scheduled cron triggers (*.md)
 │   └── morning-digest.md
-├── tools/                  # Custom user tools (*.js)
-│   └── my-api-client.js
 └── mcp.json                # MCP server configuration
 ```
 
@@ -122,7 +119,6 @@ TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
 | `memory/` | Persistent agent memory. Survives across sessions, auto-loaded into context |
 | `sessions/` | Saved REPL conversations. Resume with `tim --resume` or `/sessions` |
 | `triggers/` | Cron-scheduled workflows. Run by `tim start` daemon |
-| `tools/` | Custom JS tools extending TIM's capabilities. Auto-loaded on startup |
 | `mcp.json` | MCP (Model Context Protocol) server definitions |
 
 ---
@@ -132,7 +128,7 @@ TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
 | Command | Description |
 |---------|-------------|
 | `/help` | this help |
-| `/tools` | core, custom, and MCP tools |
+| `/tools` | core and MCP tools |
 | `/mcp` | manage MCP servers |
 | `/model [#\|id]` | show or switch model |
 | `/agents` | list agents |

@@ -11,7 +11,7 @@ import { rehydrateReadsFromMessages } from "./tools/fs.js";
 import { stream, streamCompletion, complete, getContextLimit } from "./llm.js";
 import { ToolCache } from "./cache.js";
 import { isPlanMode } from "./permissions.js";
-import { isCwdTimSource, timPath } from "./paths.js";
+import { timPath } from "./paths.js";
 import { commit as commitHistory } from "./history.js";
 import * as ui from "./ui.js";
 
@@ -156,62 +156,36 @@ export async function createAgent(profile = null) {
 
   const buildSystem = () => {
     const toolList = Object.keys(tools).join(", ");
-    const paths = `\n\n## tim dir (use for all user-specific output)
-$TIM_DIR (${process.env.TIM_DIR}) is the root for any reports, logs, data,
-or other artifacts you generate for the user. Create a subfolder under it
-when grouping makes sense (e.g. recurring reports for a topic, or by source)
-— otherwise write directly into $TIM_DIR. Use kebab-case for folder names.
-Never write user-specific output to the current working directory unless
-the user is editing files in this project.`;
-    const selfEdit = isCwdTimSource()
-      ? `\n\n## editing tim itself
-You are in tim's own source directory. These files are git-tracked — if the
-user wants to revert a change, use bash for \`git diff\`, \`git checkout -- <path>\`,
-or \`git log\` to find the prior version.`
-      : "";
-    const customizations = `\n\n## reverting user customizations
-$TIM_DIR (agents/, workflows/, tools/, memory/, TIM.md, etc.) is a git repo —
-every turn auto-commits any changes. If the user asks to revert or undo, use
-bash with \`git -C $TIM_DIR log <path>\`, \`git -C $TIM_DIR show <sha>:<path>\`,
-or \`git -C $TIM_DIR checkout <sha> -- <path>\` to restore prior versions.`;
-
-    // Auto-load the agent's own memory file (per-agent, not per-domain).
     const memorySection = effectiveProfile?.name ? formatMemoryForContext(effectiveProfile.name) : "";
-
-    const agentPreamble = effectiveProfile
-      ? `\n\n## Memory + orchestration
-- Your memory file (above) is yours alone. It's auto-loaded at the start of
-  every run so you already have the context. Do not read it with tools.
-- When you learn something durable (a pattern that worked, a stable user
-  preference, a channel-voice observation) call append_memory with a short
-  semantic section heading. Only use update_memory for a full rewrite when
-  the file has drifted.
-- Do NOT save run summaries, daily reports, or activity logs to memory —
-  those belong in your reply to the user. Memory is for facts worth
-  remembering across runs.
-- Dispatch task-shaped work to workflows via spawn_workflow. Each workflow
-  is a short-lived sub-agent that returns its findings inline — no files
-  written on the side.`
+    const ctx = loadProjectContext();
+    const tail = `Write user-facing artifacts under $TIM_DIR (${process.env.TIM_DIR}), not cwd. $TIM_DIR is a git repo with auto-commits — use \`git -C $TIM_DIR …\` for revert requests.`;
+    const agentMemoryNote = effectiveProfile
+      ? `Your memory is auto-loaded above — don't read it with tools. Call append_memory for durable facts; spawn_workflow for task-shaped work.`
       : "";
 
     if (effectiveProfile?.systemPrompt) {
-      return `${effectiveProfile.systemPrompt}${agentPreamble}${memorySection}\n\nYou are running in ${process.cwd()}. Available tools: ${toolList}.${paths}${selfEdit}${customizations}`;
+      return [
+        effectiveProfile.systemPrompt,
+        `Running in ${process.cwd()}. Tools: ${toolList}.`,
+        agentMemoryNote,
+        ctx,
+        memorySection,
+        tail,
+      ].filter(Boolean).join("\n\n");
     }
-    const base = `You are tim, a minimal coding assistant running in ${process.cwd()}.
-You have tools: ${toolList}.
-- Prefer grep/glob over reading whole directories.
-- You MUST read_file a file before edit_file.
-- Use edit_file for surgical changes; write_file only for new files or full rewrites.
-- Keep replies concise. When the task is done, stop calling tools and give a short final answer.
 
-## UI / visual changes
-Any time your edit affects something visible:
-- Get the UI running, then screenshot it — capture_webpage for URLs, capture_desktop for simulators and app windows.
-- Compare to what the user asked for. If it looks off, keep iterating; don't declare done on a bad screenshot.
-- Capture the specific screen/state the user cares about, not just the default.
-- If you can't render it (build error, missing deps, etc.), say so — typechecks aren't visual correctness.`;
-    const ctx = loadProjectContext();
-    return (ctx ? `${base}\n\n${ctx}` : base) + paths + selfEdit + customizations + memorySection;
+    const base = `You are tim, a minimal coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+
+Running in ${process.cwd()}.
+Available tools: ${toolList}.
+
+Guidelines:
+- Prefer grep/glob over reading whole directories
+- You MUST read_file before edit_file
+- Use edit_file for surgical changes; write_file only for new files or full rewrites
+- Be concise; when the task is done, stop calling tools and give a short final answer`;
+
+    return [base, ctx, memorySection, tail].filter(Boolean).join("\n\n");
   };
 
   const reset = () => {

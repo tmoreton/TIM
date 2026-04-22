@@ -27,7 +27,6 @@ import { list as listSessions } from "./session.js";
 import { setEnv, unsetEnv, listEnv, mask } from "./env.js";
 import { setAutoAccept, isAutoAccept, setPlanMode, isPlanMode } from "./permissions.js";
 import { c, info, success, error, exitHint } from "./ui.js";
-import { listCustomToolNames } from "./tools/custom.js";
 import { getModelCatalog } from "./llm.js";
 
 const HELP_ROWS = [
@@ -112,17 +111,11 @@ export async function runCommand(input) {
       return;
     case "tools": {
       const tools = await getTools();
-      const customNames = await listCustomToolNames();
       const mcpTools = Object.entries(tools).filter(([, t]) => t.isMcp);
-      const coreNames = Object.keys(tools).filter(n => !customNames.includes(n) && !tools[n].isMcp);
+      const coreNames = Object.keys(tools).filter(n => !tools[n].isMcp);
       console.log();
       console.log("  " + c.bold(c.teal("core tools")));
       for (const name of coreNames) console.log(`  ${c.teal("•")} ${c.white(name)}`);
-      if (customNames.length) {
-        console.log();
-        console.log("  " + c.bold(c.teal("custom tools")));
-        for (const name of customNames) console.log(`  ${c.teal("•")} ${c.white(name)} ${c.dim("(custom)")}`);
-      }
       if (mcpTools.length) {
         console.log();
         console.log("  " + c.bold(c.teal("MCP tools")));

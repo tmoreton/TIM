@@ -1,6 +1,4 @@
 // Tool registry. Core tools are built-in and filtered by required env vars.
-// Custom tools are loaded
-// from $TIM_DIR/tools/*.js and follow the same requiredEnv convention.
 // MCP tools are loaded from external MCP servers configured in $TIM_DIR/mcp.json.
 
 import { rehydrateReadsFromMessages, markRead } from "./fs.js";
@@ -8,7 +6,6 @@ import * as fs from "./fs.js";
 import * as bash from "./bash.js";
 import * as search from "./search.js";
 import * as spawn from "./spawn.js";
-import { loadCustomTools } from "./custom.js";
 import { connectMcpServers, getMcpTools } from "../mcp.js";
 
 import * as webFetch from "./web_fetch.js";
@@ -54,7 +51,6 @@ let mcpConnected = false;
 async function getMergedTools() {
   if (mergedTools) return mergedTools;
   const core = filterCoreTools();
-  const custom = await loadCustomTools();
 
   // Connect to MCP servers and add their tools
   if (!mcpConnected) {
@@ -83,7 +79,7 @@ async function getMergedTools() {
     };
   }
 
-  mergedTools = { ...core, ...custom, ...mcpToolDefs };
+  mergedTools = { ...core, ...mcpToolDefs };
   return mergedTools;
 }
 
