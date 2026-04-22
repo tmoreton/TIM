@@ -14,14 +14,6 @@ import {
 import { loadAgents } from "./agents.js";
 import { loadWorkflows } from "./workflows.js";
 import { loadTriggers, runTrigger, triggerExists } from "./triggers.js";
-import {
-  listMcpServers,
-  addMcpServer,
-  removeMcpServer,
-  setMcpServerEnabled,
-  connectMcpServers,
-  disconnectMcpServers,
-} from "./mcp.js";
 import { readMemory, memoryPath, listMemories } from "./memory.js";
 import { list as listSessions } from "./session.js";
 import { setEnv, unsetEnv, listEnv, mask } from "./env.js";
@@ -31,8 +23,7 @@ import { getModelCatalog } from "./llm.js";
 
 const HELP_ROWS = [
   ["/help", "this help"],
-  ["/tools", "core, custom, and MCP tools"],
-  ["/mcp", "manage MCP servers"],
+  ["/tools", "list available tools"],
   ["/model [#|id]", "show or switch model"],
   ["/agents", "list agents"],
   ["/agent <name>", "run agent (optionally: task or @file)"],
@@ -111,22 +102,9 @@ export async function runCommand(input) {
       return;
     case "tools": {
       const tools = await getTools();
-      const mcpTools = Object.entries(tools).filter(([, t]) => t.isMcp);
-      const coreNames = Object.keys(tools).filter(n => !tools[n].isMcp);
       console.log();
-      console.log("  " + c.bold(c.teal("core tools")));
-      for (const name of coreNames) console.log(`  ${c.teal("•")} ${c.white(name)}`);
-      if (mcpTools.length) {
-        console.log();
-        console.log("  " + c.bold(c.teal("MCP tools")));
-        const servers = [...new Set(mcpTools.map(([, t]) => t.server))];
-        for (const server of servers) {
-          console.log(`  ${c.teal("▸")} ${c.white(server)}`);
-          for (const [name, t] of mcpTools.filter(([, t2]) => t2.server === server)) {
-            console.log(`    ${c.dim("•")} ${c.white(t.originalName)}`);
-          }
-        }
-      }
+      console.log("  " + c.bold(c.teal("tools")));
+      for (const name of Object.keys(tools)) console.log(`  ${c.teal("•")} ${c.white(name)}`);
       console.log();
       return;
     }
@@ -363,57 +341,6 @@ export async function runCommand(input) {
       console.log(mem.body);
       console.log();
       return;
-    }
-    case "mcp": {
-      const [sub, name, ...restArgs] = arg.split(/\s+/);
-      if (!sub || sub === "list") {
-        const servers = listMcpServers();
-        console.log();
-        console.log("  " + c.bold(c.teal("MCP servers")));
-        if (servers.length) {
-          const pad = Math.max(...servers.map((s) => s.name.length)) + 2;
-          for (const s of servers) {
-            const status = s.enabled ? c.teal("●") : c.dim("○");
-            const cmd = s.url ? s.url : `${s.command} ${s.args?.join(" ") || ""}`.trim();
-            console.log(`  ${status} ${c.white(s.name.padEnd(pad))} ${c.dim(cmd)}`);
-          }
-        } else {
-          console.log(`  ${c.dim("(none — add one with /mcp add <name> <command> [args...])")}`);
-        }
-        console.log();
-        info("add, remove, enable, disable, or reconnect MCP servers");
-        return;
-      }
-      if (sub === "add") {
-        if (!name) return error("usage: /mcp add <name> <command> [args...]");
-        const cmdArgs = restArgs;
-        if (!cmdArgs.length) return error("usage: /mcp add <name> <command> [args...]");
-        const [cmd, ...args] = cmdArgs;
-        addMcpServer(name, { command: cmd, args, enabled: true });
-        success(`added MCP server "${name}"`);
-        info(`restart or run /mcp reconnect to connect`);
-        return;
-      }
-      if (sub === "remove") {
-        if (!name) return error("usage: /mcp remove <name>");
-        if (!removeMcpServer(name)) return error(`MCP server "${name}" not found`);
-        success(`removed MCP server "${name}"`);
-        return;
-      }
-      if (sub === "enable" || sub === "disable") {
-        if (!name) return error(`usage: /mcp ${sub} <name>`);
-        const on = sub === "enable";
-        if (!setMcpServerEnabled(name, on)) return error(`MCP server "${name}" not found`);
-        success(`${sub}d MCP server "${name}"`);
-        return;
-      }
-      if (sub === "reconnect") {
-        disconnectMcpServers();
-        await connectMcpServers();
-        success("reconnected to MCP servers");
-        return;
-      }
-      return error("usage: /mcp [list|add|remove|enable|disable|reconnect] [args...]");
     }
     case "trigger":
     case "schedule": {

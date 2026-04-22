@@ -74,7 +74,6 @@ import { startRepl } from "./repl.js";
 import { loadTriggers, writeTrigger, deleteTrigger, triggerExists, getTriggerState, getTriggersDir, runTrigger } from "./triggers.js";
 import { start } from "./server.js";
 import { commit as commitHistory } from "./history.js";
-import { disconnectMcpServers } from "./mcp.js";
 import * as ui from "./ui.js";
 
 const ask = (rl, q, def) => new Promise((res) => {
@@ -551,11 +550,5 @@ if (resumeIdx !== -1) {
 
 // Only start REPL if not running a subcommand
 if (!argv[0] || !["agent", "workflow", "trigger", "schedule", "run", "env", "start", "server"].includes(argv[0])) {
-  // Cleanup MCP connections on exit
-  process.on("SIGINT", () => { disconnectMcpServers(); process.exit(0); });
-  process.on("SIGTERM", () => { disconnectMcpServers(); process.exit(0); });
-  process.on("exit", () => { disconnectMcpServers(); });
-
-  // Start the REPL
   startRepl();
 }

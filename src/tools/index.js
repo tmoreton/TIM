@@ -1,13 +1,11 @@
 // Tool registry. Auto-discovers any `src/tools/*.js` that exports a
 // `tools` object — drop a file in this directory and its tools register
 // on next launch. Each entry: { schema, run, requiredEnv? }.
-// MCP tools are loaded from external MCP servers configured in $TIM_DIR/mcp.json.
 
 import nodeFs from "node:fs";
 import nodePath from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { rehydrateReadsFromMessages, markRead } from "./fs.js";
-import { connectMcpServers, getMcpTools } from "../mcp.js";
 
 const __dirname = nodePath.dirname(fileURLToPath(import.meta.url));
 
@@ -43,37 +41,10 @@ async function loadCoreTools() {
 // Built lazily so env vars from $TIM_DIR/.env are loaded by the time we
 // decide what's registered.
 let mergedTools = null;
-let mcpConnected = false;
 
 async function getMergedTools() {
   if (mergedTools) return mergedTools;
-  const core = await loadCoreTools();
-
-  if (!mcpConnected) {
-    await connectMcpServers();
-    mcpConnected = true;
-  }
-  const mcpTools = getMcpTools();
-  const mcpToolDefs = {};
-  for (const tool of mcpTools) {
-    const fullName = `mcp_${tool.server}_${tool.name}`;
-    mcpToolDefs[fullName] = {
-      schema: {
-        type: "function",
-        function: {
-          name: fullName,
-          description: `[${tool.server}] ${tool.description}`,
-          parameters: tool.inputSchema || { type: "object", properties: {} },
-        },
-      },
-      run: async (args) => tool._call(args),
-      isMcp: true,
-      server: tool.server,
-      originalName: tool.name,
-    };
-  }
-
-  mergedTools = { ...core, ...mcpToolDefs };
+  mergedTools = await loadCoreTools();
   return mergedTools;
 }
 
