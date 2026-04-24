@@ -9,6 +9,8 @@ import path from "node:path";
 import { confirm } from "../permissions.js";
 import { editDiff, writeDiff } from "../ui.js";
 import { TIM_SOURCE_ROOT, isInsideTimSource } from "../paths.js";
+import { planMultiEdit } from "./edit-utils.js";
+import { runExclusive } from "./file-mutation-queue.js";
 
 // Returns an error string if `abs` is inside tim's own source but the user
 // isn't currently working from within the tim directory. Keeps accidental
@@ -125,7 +127,9 @@ export async function run({ path: p = ".", recursive = false, depth = 3, show_hi
     }
   };
   walk(abs, "", 1);
-  const truncated = lines.length >= MAX_LIST_ENTRIES ? `\n...[truncated at ${MAX_LIST_ENTRIES} entries]` : "";
+  const truncated = lines.length >= MAX_LIST_ENTRIES
+    ? `\n...[${MAX_LIST_ENTRIES}-entry cap reached. Narrow with a deeper path, reduce depth, or use glob/grep to find specific files.]`
+    : "";
   return { content: lines.join("\n") + truncated, cacheDeps: [abs] };
 }
 
@@ -177,7 +181,7 @@ export async function readRun({ path: p, offset = 0, limit }) {
     body = prefix + slice + suffix;
   } else if (content.length > MAX_FILE_CHARS) {
     body = content.slice(0, MAX_FILE_CHARS) +
-      `\n...[truncated ${content.length - MAX_FILE_CHARS} chars]`;
+      `\n...[truncated ${content.length - MAX_FILE_CHARS} chars. File is large — use offset/limit to page, or grep to find specific content.]`;
   } else {
     body = content;
   }
@@ -186,61 +190,96 @@ export async function readRun({ path: p, offset = 0, limit }) {
 }
 
 // edit_file
+//
+// Two accepted call shapes:
+//   { path, old_string, new_string, replace_all? }            — single edit
+//   { path, edits: [{old_string, new_string, replace_all?}] } — multi-edit
+//
+// All edits in a multi-edit call are matched against the ORIGINAL file
+// (not after earlier edits are applied) and must not overlap each other.
+// This mirrors pi-mono semantics: one tool call can touch several disjoint
+// locations without extra round-trips.
+//
+// On exact-match miss we try a Unicode-normalized fallback (smart quotes,
+// unicode dashes, nbsp) to recover from common LLM output drift, but we
+// splice the original bytes — the rest of the file is never silently
+// renormalized.
 export const editSchema = {
   type: "function",
   function: {
     name: "edit_file",
     description:
-      "Replace old_string with new_string in a file. old_string must appear exactly once unless replace_all is true. File must have been read first.",
+      "Edit a file by replacing exact text. Pass either a single edit (old_string/new_string/replace_all) or `edits: [{old_string, new_string, replace_all?}]` for multiple disjoint changes in one call (preferred — saves round-trips). Each old_string is matched against the original file, not after earlier edits. old_string must be unique unless replace_all is set. File must be read_file'd first.",
     parameters: {
       type: "object",
       properties: {
         path: { type: "string" },
-        old_string: { type: "string" },
-        new_string: { type: "string" },
-        replace_all: { type: "boolean" },
+        old_string: { type: "string", description: "Single-edit form: exact text to replace." },
+        new_string: { type: "string", description: "Single-edit form: replacement text." },
+        replace_all: { type: "boolean", description: "Single-edit form: replace every occurrence." },
+        edits: {
+          type: "array",
+          description: "Multi-edit form: array of {old_string, new_string, replace_all?}. old_strings must not overlap (matched against original).",
+          items: {
+            type: "object",
+            properties: {
+              old_string: { type: "string" },
+              new_string: { type: "string" },
+              replace_all: { type: "boolean" },
+            },
+            required: ["old_string", "new_string"],
+          },
+        },
       },
-      required: ["path", "old_string", "new_string"],
+      required: ["path"],
     },
   },
 };
 
-export async function editRun({ path: p, old_string, new_string, replace_all = false }, ctx = {}) {
+export async function editRun(args, ctx = {}) {
+  const { path: p } = args;
+  if (!p) return "ERROR: path is required";
   const abs = resolveAny(p);
   const blocked = selfEditGuard(abs);
   if (blocked) return blocked;
-  const readSnap = readFiles.get(abs);
-  if (!readSnap)
-    return `ERROR: read_file ${p} before editing it.`;
-  const current = statOrNull(abs);
-  if (current && (current.mtimeMs !== readSnap.mtimeMs || current.size !== readSnap.size))
-    return `ERROR: ${p} was modified since you read it (mtime or size changed). read_file it again before editing.`;
-  const original = fs.readFileSync(abs, "utf8");
 
-  let updated;
-  if (replace_all) {
-    if (!original.includes(old_string))
-      return `ERROR: old_string not found in ${p}`;
-    updated = original.split(old_string).join(new_string);
-  } else {
-    const first = original.indexOf(old_string);
-    if (first === -1) return `ERROR: old_string not found in ${p}`;
-    const second = original.indexOf(old_string, first + old_string.length);
-    if (second !== -1)
-      return `ERROR: old_string matches ${
-        original.split(old_string).length - 1
-      } times in ${p}. Provide a longer unique snippet or set replace_all=true.`;
-    updated = original.slice(0, first) + new_string + original.slice(first + old_string.length);
+  // Normalize single-edit into the multi-edit shape.
+  let edits = Array.isArray(args.edits) ? args.edits : null;
+  if (!edits) {
+    if (typeof args.old_string !== "string" || typeof args.new_string !== "string") {
+      return "ERROR: provide either {old_string, new_string} or edits: [...].";
+    }
+    edits = [{ old_string: args.old_string, new_string: args.new_string, replace_all: !!args.replace_all }];
   }
+  if (edits.length === 0) return "ERROR: edits array is empty";
 
-  const ok = await confirm("edit_file", { path: p }, `edit ${p}`);
-  if (!ok) return "User denied the edit.";
+  return runExclusive(abs, async () => {
+    const readSnap = readFiles.get(abs);
+    if (!readSnap) return `ERROR: read_file ${p} before editing it.`;
+    const current = statOrNull(abs);
+    if (current && (current.mtimeMs !== readSnap.mtimeMs || current.size !== readSnap.size))
+      return `ERROR: ${p} was modified since you read it (mtime or size changed). read_file it again before editing.`;
 
-  fs.writeFileSync(abs, updated);
-  markRead(abs); // refresh mtime snapshot so subsequent edits don't false-positive
-  ctx.toolCache?.invalidatePath(abs);
-  editDiff(old_string, new_string);
-  return `Edited ${p}`;
+    const original = fs.readFileSync(abs, "utf8");
+    const planned = planMultiEdit(original, edits);
+    if (!planned.ok) return `ERROR: ${planned.error} in ${p}`;
+
+    const label = edits.length === 1
+      ? `edit ${p}`
+      : `edit ${p} (${edits.length} changes)`;
+    const ok = await confirm("edit_file", { path: p }, label);
+    if (!ok) return "User denied the edit.";
+
+    fs.writeFileSync(abs, planned.updated);
+    markRead(abs); // refresh mtime snapshot so subsequent edits don't false-positive
+    ctx.toolCache?.invalidatePath(abs);
+
+    for (const d of planned.appliedDiffs) editDiff(d.old, d.new);
+    const fuzzy = planned.appliedDiffs.some((d) => d.fuzzy) ? " (unicode-normalized match)" : "";
+    return edits.length === 1
+      ? `Edited ${p}${fuzzy}`
+      : `Edited ${p}: applied ${edits.length} changes${fuzzy}`;
+  });
 }
 
 // write_file
@@ -265,24 +304,46 @@ export async function writeRun({ path: p, content }, ctx = {}) {
   const abs = resolveAny(p);
   const blocked = selfEditGuard(abs);
   if (blocked) return blocked;
-  const exists = fs.existsSync(abs);
-  const ok = await confirm(
-    "write_file",
-    { path: p },
-    `${exists ? "overwrite" : "create"} ${p} (${content.length} bytes)`,
-  );
-  if (!ok) return "User denied the write.";
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, content);
-  markRead(abs);
-  ctx.toolCache?.invalidatePath(abs);
-  writeDiff(content);
-  return `Wrote ${content.length} bytes to ${p}`;
+  return runExclusive(abs, async () => {
+    const exists = fs.existsSync(abs);
+    const ok = await confirm(
+      "write_file",
+      { path: p },
+      `${exists ? "overwrite" : "create"} ${p} (${content.length} bytes)`,
+    );
+    if (!ok) return "User denied the write.";
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+    markRead(abs);
+    ctx.toolCache?.invalidatePath(abs);
+    writeDiff(content);
+    return `Wrote ${content.length} bytes to ${p}`;
+  });
 }
 
 export const tools = {
-  list_files: { schema, run },
-  read_file:  { schema: readSchema, run: readRun },
-  edit_file:  { schema: editSchema, run: editRun },
-  write_file: { schema: writeSchema, run: writeRun },
+  list_files: {
+    schema, run,
+    promptSnippet: "list_files: list or tree a directory",
+  },
+  read_file: {
+    schema: readSchema, run: readRun,
+    promptSnippet: "read_file: read a text file (offset/limit for paging)",
+  },
+  edit_file: {
+    schema: editSchema, run: editRun,
+    promptSnippet: "edit_file: surgical edits (pass edits:[{old_string,new_string}] for multi-site changes in one call)",
+    promptGuidelines: [
+      "You MUST read_file before edit_file.",
+      "Use edit_file for surgical changes. When changing multiple places in one file, pass `edits: [{old_string, new_string, replace_all?}]` in a single call instead of multiple edit_file calls.",
+      "Each old_string in a multi-edit call is matched against the original file (not after earlier edits), and must not overlap any other. Keep old_string small but unique.",
+    ],
+  },
+  write_file: {
+    schema: writeSchema, run: writeRun,
+    promptSnippet: "write_file: create or fully rewrite a file",
+    promptGuidelines: [
+      "Use write_file only for new files or complete rewrites; prefer edit_file for surgical changes.",
+    ],
+  },
 };

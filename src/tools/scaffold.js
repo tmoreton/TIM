@@ -132,6 +132,12 @@ export async function createWorkflowRun({ name, agent, description, system_promp
 }
 
 export const tools = {
-  create_agent:    { schema: createAgentSchema,    run: createAgentRun },
-  create_workflow: { schema: createWorkflowSchema, run: createWorkflowRun },
+  create_agent: {
+    schema: createAgentSchema, run: createAgentRun,
+    promptSnippet: "create_agent: scaffold a new agent profile in $TIM_DIR/agents/",
+  },
+  create_workflow: {
+    schema: createWorkflowSchema, run: createWorkflowRun,
+    promptSnippet: "create_workflow: scaffold a workflow (task spec bound to an agent) in $TIM_DIR/workflows/",
+  },
 };

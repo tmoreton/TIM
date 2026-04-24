@@ -304,6 +304,12 @@ export async function captureDesktopRun(args = {}, ctx = {}) {
 }
 
 export const tools = {
-  capture_webpage: { schema: captureWebpageSchema, run: captureWebpageRun },
-  capture_desktop: { schema: captureDesktopSchema, run: captureDesktopRun },
+  capture_webpage: {
+    schema: captureWebpageSchema, run: captureWebpageRun,
+    promptSnippet: "capture_webpage: screenshot a URL (headless Chrome)",
+  },
+  capture_desktop: {
+    schema: captureDesktopSchema, run: captureDesktopRun,
+    promptSnippet: "capture_desktop: screenshot the user's desktop",
+  },
 };

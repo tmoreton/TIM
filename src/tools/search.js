@@ -57,7 +57,7 @@ const runRg = (args) =>
         const truncated =
           lines.length > MAX_LINES
             ? lines.slice(0, MAX_LINES).join("\n") +
-              `\n...[truncated ${lines.length - MAX_LINES} more lines]`
+              `\n...[${MAX_LINES}-line cap reached (${lines.length - MAX_LINES} more). Refine the pattern, narrow with glob/type, or pass head_limit=${MAX_LINES * 2} for more.]`
             : out;
         resolve(truncated.trim() || "(no matches)");
       } else {
@@ -101,7 +101,8 @@ const applyHead = (out, limit) => {
   if (!limit || limit <= 0) return out;
   const lines = out.split("\n");
   if (lines.length <= limit) return out;
-  return lines.slice(0, limit).join("\n") + `\n...[truncated, head_limit=${limit}]`;
+  return lines.slice(0, limit).join("\n") +
+    `\n...[head_limit=${limit} reached (${lines.length - limit} more). Raise head_limit, narrow with glob/type, or refine the pattern.]`;
 };
 
 export async function grepRun(params) {
@@ -203,10 +204,26 @@ export async function globRun({ pattern, path: p = "." }) {
   const files = await listFiles(pattern, p);
   const abs = path.resolve(p);
   if (!files.length) return { content: "(no matches)", cacheDeps: [abs] };
-  return { content: files.slice(0, MAX_LINES).join("\n"), cacheDeps: [abs] };
+  if (files.length > MAX_LINES) {
+    const head = files.slice(0, MAX_LINES).join("\n");
+    return {
+      content: head + `\n...[${MAX_LINES}-file cap reached (${files.length - MAX_LINES} more). Narrow the pattern or search a subtree.]`,
+      cacheDeps: [abs],
+    };
+  }
+  return { content: files.join("\n"), cacheDeps: [abs] };
 }
 
 export const tools = {
-  grep: { schema: grepSchema, run: grepRun },
-  glob: { schema: globSchema, run: globRun },
+  grep: {
+    schema: grepSchema, run: grepRun,
+    promptSnippet: "grep: regex search across file contents (prefer over reading whole dirs)",
+    promptGuidelines: [
+      "Prefer grep/glob over list_files+read_file for locating code. Narrow with `glob` or `type` and use `head_limit` to cap output.",
+    ],
+  },
+  glob: {
+    schema: globSchema, run: globRun,
+    promptSnippet: "glob: find files by glob pattern",
+  },
 };

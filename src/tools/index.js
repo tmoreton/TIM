@@ -29,7 +29,12 @@ async function loadCoreTools() {
       for (const [name, def] of Object.entries(mod.tools)) {
         if (!def?.schema || !def?.run) continue;
         if (!hasRequiredEnv(def.requiredEnv)) continue;
-        out[name] = { schema: def.schema, run: def.run };
+        out[name] = {
+          schema: def.schema,
+          run: def.run,
+          promptSnippet: def.promptSnippet,
+          promptGuidelines: def.promptGuidelines,
+        };
       }
     } catch (e) {
       console.error(`[tools] failed to load "${file}": ${e.message}`);

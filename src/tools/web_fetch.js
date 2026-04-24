@@ -85,5 +85,8 @@ export async function run({ urls }, ctx = {}) {
 }
 
 export const tools = {
-  web_fetch: { schema, run },
+  web_fetch: {
+    schema, run,
+    promptSnippet: "web_fetch: fetch one or more URLs and extract text",
+  },
 };

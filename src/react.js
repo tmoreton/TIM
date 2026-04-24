@@ -16,6 +16,13 @@ import { isPlanMode } from "./permissions.js";
 import { timPath, agentOutputDir, isCwdTimSource } from "./paths.js";
 import { commit as commitHistory } from "./history.js";
 import * as ui from "./ui.js";
+import {
+  extractFileOpsInto,
+  renderFileOps,
+  serializeForSummary,
+  FRESH_SUMMARY_INSTRUCTION,
+  UPDATE_SUMMARY_INSTRUCTION,
+} from "./compaction.js";
 
 // Snapshot of the cwd for the system prompt. Without this the model sees only
 // a one-line "Running in <cwd>" that gets drowned by $TIM_DIR-heavy guidance,
@@ -185,10 +192,45 @@ export async function createAgent(profile = null) {
     toolCache: new ToolCache(),
     profile: effectiveProfile || profile,
     persist: true, // always persist sessions for interactive REPL use
+    // Cumulative file-op tracking across compactions. Every compaction walks
+    // the messages it's about to summarize, extracts paths touched by
+    // read_file / write_file / edit_file tool calls, and merges them into
+    // these sets. The trailer emitted into the summary lets the resumed
+    // agent recall what files it's been working with even after the
+    // details have been summarized away.
+    compactionFileOps: { read: new Set(), modified: new Set() },
+    lastCompactionSummary: null, // string, for iterative update prompts
+  };
+
+  // Build the "Available tools" block and the Guidelines block from the
+  // ACTIVE tool set. Tools export an optional `promptSnippet` (one-liner in
+  // the tools list) and `promptGuidelines[]` (bullets). An agent with a
+  // narrow allowlist doesn't pay tokens for guidance about tools it can't
+  // call.
+  const buildToolsBlock = () => {
+    const entries = Object.entries(tools);
+    const lines = entries.map(([name, t]) =>
+      t.promptSnippet ? `- ${t.promptSnippet}` : `- ${name}`
+    );
+    return `Available tools:\n${lines.join("\n")}`;
+  };
+
+  const buildGuidelinesBlock = () => {
+    const seen = new Set();
+    const bullets = [];
+    for (const t of Object.values(tools)) {
+      for (const g of t.promptGuidelines || []) {
+        if (seen.has(g)) continue;
+        seen.add(g);
+        bullets.push(`- ${g}`);
+      }
+    }
+    // Always-on rule: concise finishes apply regardless of toolset.
+    bullets.push("- Be concise; when the task is done, stop calling tools and give a short final answer.");
+    return `Guidelines:\n${bullets.join("\n")}`;
   };
 
   const buildSystem = () => {
-    const toolList = Object.keys(tools).join(", ");
     const memorySection = effectiveProfile?.name ? formatMemoryForContext(effectiveProfile.name) : "";
     const ctx = loadProjectContext();
     const outDir = agentOutputDir(effectiveProfile?.name);
@@ -198,12 +240,15 @@ export async function createAgent(profile = null) {
       : "";
 
     const cwdContext = buildCwdContext();
+    const toolsBlock = buildToolsBlock();
+    const guidelinesBlock = buildGuidelinesBlock();
 
     if (effectiveProfile?.systemPrompt) {
       return [
         effectiveProfile.systemPrompt,
         cwdContext,
-        `Tools: ${toolList}.`,
+        toolsBlock,
+        guidelinesBlock,
         agentMemoryNote,
         ctx,
         memorySection,
@@ -211,17 +256,9 @@ export async function createAgent(profile = null) {
       ].filter(Boolean).join("\n\n");
     }
 
-    const base = `You are tim, a minimal coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+    const base = `You are tim, a minimal coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.`;
 
-Available tools: ${toolList}.
-
-Guidelines:
-- Prefer grep/glob over reading whole directories
-- You MUST read_file before edit_file
-- Use edit_file for surgical changes; write_file only for new files or full rewrites
-- Be concise; when the task is done, stop calling tools and give a short final answer`;
-
-    return [base, cwdContext, ctx, memorySection, tail].filter(Boolean).join("\n\n");
+    return [base, cwdContext, toolsBlock, guidelinesBlock, ctx, memorySection, tail].filter(Boolean).join("\n\n");
   };
 
   const reset = () => {
@@ -232,6 +269,8 @@ Guidelines:
     }
     state.usage = { prompt: 0, completion: 0, lastPrompt: 0 };
     state.toolCache.clear();
+    state.compactionFileOps = { read: new Set(), modified: new Set() };
+    state.lastCompactionSummary = null;
     rehydrateReadsFromMessages([]);
   };
 
@@ -400,14 +439,24 @@ Guidelines:
     const middle = state.messages.slice(1, tailStart);
     if (middle.length < 4) return "Nothing to compact yet.";
 
+    // Thread file-ops from the messages we're about to summarize into the
+    // cumulative set so the trailer reflects everything since session start,
+    // not just this compaction round.
+    extractFileOpsInto(middle, state.compactionFileOps);
+
+    const instruction = state.lastCompactionSummary
+      ? UPDATE_SUMMARY_INSTRUCTION(state.lastCompactionSummary)
+      : FRESH_SUMMARY_INSTRUCTION;
+
     const summaryPrompt = [
-      system,
+      {
+        role: "system",
+        content: "You are a conversation summarization assistant. Output only the structured summary the user's instruction asks for. Never continue the conversation.",
+      },
       {
         role: "user",
-        content:
-          "Summarize the conversation so far in <=400 words. Capture: files read/edited, commands run, decisions made, and outstanding TODOs. Plain prose, no preamble.",
+        content: `${instruction}\n\n${serializeForSummary(middle)}`,
       },
-      ...middle,
     ];
 
     let summary = "";
@@ -421,9 +470,17 @@ Guidelines:
       spin.stop();
     }
 
+    summary = summary.trim();
+    state.lastCompactionSummary = summary;
+
+    const fileOpsBlock = renderFileOps(state.compactionFileOps);
+    const fullSummary = fileOpsBlock
+      ? `${summary}\n\n${fileOpsBlock}`
+      : summary;
+
     state.messages = [
       system,
-      { role: "user", content: `[Summary of earlier conversation]\n${summary}` },
+      { role: "user", content: `[Summary of earlier conversation]\n${fullSummary}` },
       { role: "assistant", content: "Got it — continuing from the summary." },
       ...tail,
     ];

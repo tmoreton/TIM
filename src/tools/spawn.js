@@ -64,5 +64,11 @@ export async function run({ workflow, task }, { signal }) {
 }
 
 export const tools = {
-  spawn_workflow: { schema, run },
+  spawn_workflow: {
+    schema, run,
+    promptSnippet: "spawn_workflow: run a workflow sub-session (returns final reply as a string)",
+    promptGuidelines: [
+      "Use spawn_workflow for task-shaped work with a self-contained scope (research, focused investigation). The result is returned to you — don't expect a side-effect file.",
+    ],
+  },
 };

@@ -67,6 +67,15 @@ export async function appendMemoryRun({ section, content }, ctx) {
 }
 
 export const tools = {
-  update_memory: { schema: updateMemorySchema, run: updateMemoryRun },
-  append_memory: { schema: appendMemorySchema, run: appendMemoryRun },
+  update_memory: {
+    schema: updateMemorySchema, run: updateMemoryRun,
+    promptSnippet: "update_memory: rewrite your agent memory from scratch",
+  },
+  append_memory: {
+    schema: appendMemorySchema, run: appendMemoryRun,
+    promptSnippet: "append_memory: append a dated section to your agent memory",
+    promptGuidelines: [
+      "Call append_memory for durable findings (stable preferences, patterns, facts worth keeping across runs). Do not log run summaries — those go in your reply.",
+    ],
+  },
 };
