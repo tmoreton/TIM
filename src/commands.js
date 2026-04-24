@@ -312,7 +312,13 @@ export async function runCommand(input) {
       setPlanMode(next);
       if (next) {
         console.log(
-          `  ${c.teal("◐")}  ${c.bold("plan mode ON")} ${c.dim("— model will draft a plan; edit_file/write_file/bash are blocked")}`,
+          `  ${c.teal("◐")}  ${c.bold("plan mode ON")} ${c.dim("— model will deliberate, self-critique, then finalize")}`,
+        );
+        console.log(
+          `  ${c.dim("phases: restate → investigate → assumptions/risks → options → plan (files · steps · verification)")}`,
+        );
+        console.log(
+          `  ${c.dim("edit_file, write_file, and bash are blocked. /plan to exit.")}`,
         );
         return;
       }

@@ -55,11 +55,60 @@ const buildCwdContext = () => {
   return lines.join("\n");
 };
 
-const PLAN_PREFIX =
-  "[PLAN MODE] Research freely with read_file / grep / glob / list_files, " +
-  "but DO NOT call edit_file, write_file, or bash. Draft a short numbered " +
-  "plan (files to change, what to change, in what order) and stop. The user " +
-  "will run /plan to exit plan mode, then tell you to proceed.\n\n";
+// Plan mode forces the model through explicit phases before producing steps.
+// The structure alone makes the model spend more tokens on deliberation —
+// no model-specific reasoning APIs required; this is just chain-of-thought
+// scaffolding. After the first draft, turn() injects PLAN_CRITIQUE_PROMPT
+// to force a pressure-test + revision pass before finalizing.
+const PLAN_PREFIX = `[PLAN MODE — think before planning]
+
+Work through these phases IN ORDER before producing any plan. Do NOT skip phases or jump to a numbered list.
+
+## 1. Restate the task
+What is the user asking for, in your own words? What does "done" look like? Surface any ambiguity now rather than guessing.
+
+## 2. Investigate
+Use read_file / grep / glob / list_files to build the context you need. edit_file, write_file, and bash are blocked. After investigating, note what you actually found that matters to the plan.
+
+## 3. Assumptions & risks
+- Assumptions you're making that the user should confirm
+- Edge cases, failure modes, things that could break
+- Anything you don't know yet that could change the plan
+
+## 4. Options considered
+Sketch 2–3 viable approaches. For each: what it does, tradeoffs, why you would or wouldn't pick it. Then name the chosen approach and say why.
+
+## 5. The plan
+
+### Files to touch
+- \`path/to/file\` — what changes and why
+
+### Step-by-step
+1. concrete action (not "update X" — say what specifically changes)
+2. ...
+
+### Verification
+Tests to run, commands to check, behavior to confirm it worked.
+
+Stop after phase 5. Do NOT call edit_file, write_file, or bash. The user will /plan to exit plan mode and then tell you to proceed.
+
+---
+
+User's task:
+
+`;
+
+const PLAN_CRITIQUE_PROMPT = `Before finalizing, pressure-test the plan you just drafted. Answer honestly:
+
+- What in the plan is under-specified or hand-wavy? (If a step says "update X" without naming the exact change, flag it.)
+- Which step is most likely to fail? Why?
+- What load-bearing assumption did you make that, if wrong, would invalidate the plan?
+- Did you miss any file, call site, test, or config that would need to change?
+- Is the verification concrete enough to know whether it worked?
+
+Then output the FINAL plan using the same structure (Files to touch / Step-by-step / Verification), incorporating the fixes. If investigation is needed first, call read-only tools — edit_file, write_file, and bash are still blocked.
+
+After the final plan, stop.`;
 
 
 const encodeFile = (filePath) => {
@@ -303,9 +352,15 @@ export async function createAgent(profile = null) {
   };
 
   const turn = async (userInput, signal, attachments = null, onToken = null) => {
-    const text = isPlanMode() ? PLAN_PREFIX + userInput : userInput;
+    const planActive = isPlanMode();
+    const text = planActive ? PLAN_PREFIX + userInput : userInput;
     const userMessage = buildUserMessage(text, attachments);
     state.messages.push(userMessage);
+
+    // In plan mode, after the model emits its first no-tool-calls message
+    // (the draft plan), we inject PLAN_CRITIQUE_PROMPT once to force a
+    // pressure-test + revision pass. Local flag — per-turn, not persisted.
+    let planCritiqueDone = false;
 
     try {
       while (true) {
@@ -318,6 +373,16 @@ export async function createAgent(profile = null) {
         state.messages.push(message);
 
         if (!message.tool_calls?.length) {
+          // Plan-mode critique pass: inject a self-critique user message
+          // and let the model revise. Guarded by planActive (not isPlanMode())
+          // so toggling /plan off mid-turn doesn't strand a critique.
+          if (planActive && !planCritiqueDone) {
+            planCritiqueDone = true;
+            ui.info("plan mode: pressure-testing the draft, then finalizing...");
+            state.messages.push({ role: "user", content: PLAN_CRITIQUE_PROMPT });
+            continue;
+          }
+
           if (state.persist) {
             const limit = getContextLimit(state.model);
             ui.statusFooter({
