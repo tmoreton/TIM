@@ -25,13 +25,18 @@ if (!fs.existsSync(globalTimMd)) {
 |--------|---------|
 | \`agents/\` | Agent persona definitions (managed via \`create_agent\` / \`tim agent new\`) |
 | \`workflows/\` | Workflow task specs (managed via \`create_workflow\` / \`tim workflow new\`) |
+| \`skills/\` | Reusable procedural recipes (managed via \`create_skill\` / \`tim skill new\`) — any agent can consult one via \`read_skill(name)\` when a task matches its description |
 
-## Agents vs workflows
+## Agents vs workflows vs skills
 
 One agent per domain (\`youtube\`, \`github\`); workflows are tasks within
 that domain (\`youtube-daily-report\`, \`youtube-thumbnail-gen\`). If a
 \`<domain>\` agent already exists, "<domain> <verb-er>" requests are workflows
 under it — not new agents.
+
+Skills are orthogonal: they're "how to do X" recipes any agent can consult.
+An agent (or workflow) can narrow visible skills with \`skills: [name, ...]\`
+in its frontmatter; omit to see all.
 
 | \`triggers/\` | Cron-scheduled workflows |
 | \`memory/\` | Persistent memory per agent (write via \`append_memory\` / \`update_memory\`) |
@@ -97,6 +102,7 @@ import {
 } from "./react.js";
 import { loadAgents, writeAgentProfile, agentExists, getAgentsDir, deleteAgentProfile } from "./agents.js";
 import { loadWorkflows, writeWorkflow, workflowExists, getWorkflowsDir, deleteWorkflow, mergeProfile } from "./workflows.js";
+import { loadSkills, writeSkillProfile, skillExists, getSkillsDir, deleteSkillProfile } from "./skills.js";
 import { runCommand } from "./commands.js";
 import { load as loadSession, latest } from "./session.js";
 
@@ -388,6 +394,94 @@ if (argv[0] === "workflow") {
   }
 
   console.error("usage: tim workflow [new|list|edit|delete] [name]");
+  process.exit(1);
+}
+
+// tim skill new|list|edit|delete
+// Skills are reusable procedural recipes — any agent can consult one via
+// read_skill(name) when a task matches the skill's description. Managed
+// the same way as agents and workflows (same frontmatter+body format).
+if (argv[0] === "skill") {
+  const sub = argv[1];
+  const name = argv[2];
+
+  if (!sub || sub === "list") {
+    const skills = Object.values(loadSkills());
+    if (!skills.length) {
+      console.log("  no skills — run: tim skill new  (or ask an agent to `create_skill` in chat)");
+    } else {
+      const pad = Math.max(...skills.map((s) => s.name.length)) + 2;
+      console.log();
+      for (const s of skills) {
+        console.log(`  ${s.name.padEnd(pad)} ${s.description}`);
+      }
+      console.log();
+    }
+    process.exit(0);
+  }
+
+  if (sub === "new") {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+    console.log();
+    console.log("  Creating a new skill (reusable procedural recipe — any agent can consult it).\n");
+
+    const skillName = await ask(rl, "Name (kebab-case, e.g. deploy-nextjs-vercel)", name || "");
+    if (!skillName) { console.error("  name is required"); process.exit(1); }
+    if (skillExists(skillName)) {
+      console.error(`  skill "${skillName}" already exists at ${getSkillsDir()}/${skillName}.md`);
+      process.exit(1);
+    }
+
+    const description = await ask(
+      rl,
+      "Description (action-oriented; this is what the model sees to decide relevance)",
+      "",
+    );
+    if (!description) { console.error("  description is required — the model uses it to decide when to consult the skill"); process.exit(1); }
+
+    const starterBody =
+      `## When to use\n` +
+      `Describe the conditions that make this skill relevant.\n\n` +
+      `## Steps\n` +
+      `1. First concrete step.\n` +
+      `2. Next step.\n\n` +
+      `## Verification\n` +
+      `How to confirm the procedure worked.\n\n` +
+      `## Gotchas\n` +
+      `Known pitfalls, env assumptions, or edge cases.\n`;
+
+    rl.close();
+    const filepath = writeSkillProfile(skillName, { description, body: starterBody });
+    commitHistory(`skill new: ${skillName}`);
+
+    console.log();
+    console.log(`  ✓ created ${filepath}`);
+    await openPrompt(filepath);
+
+    console.log(`\n  Available to every agent. Narrow per agent with \`skills: [${skillName}]\` in the agent's frontmatter.\n`);
+    process.exit(0);
+  }
+
+  if (sub === "edit") {
+    if (!name) { console.error("usage: tim skill edit <name>"); process.exit(1); }
+    const filepath = `${getSkillsDir()}/${name}.md`;
+    if (!fs.existsSync(filepath)) { console.error(`skill "${name}" not found`); process.exit(1); }
+    editFile(filepath);
+    commitHistory(`skill edit: ${name}`);
+    console.log(`  ✓ saved ${filepath}`);
+    process.exit(0);
+  }
+
+  if (sub === "delete") {
+    if (!name) { console.error("usage: tim skill delete <name>"); process.exit(1); }
+    if (!deleteSkillProfile(name)) { console.error(`skill "${name}" not found`); process.exit(1); }
+    commitHistory(`skill delete: ${name}`);
+    console.log(`  ✓ deleted ${name}`);
+    process.exit(0);
+  }
+
+  console.error("usage: tim skill [new|list|edit|delete] [name]");
   process.exit(1);
 }
 

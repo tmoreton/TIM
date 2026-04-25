@@ -13,6 +13,7 @@ import {
 } from "./react.js";
 import { loadAgents } from "./agents.js";
 import { loadWorkflows } from "./workflows.js";
+import { loadSkills } from "./skills.js";
 import { loadTriggers, runTrigger, triggerExists } from "./triggers.js";
 import { readMemory, memoryPath, listMemories } from "./memory.js";
 import { list as listSessions } from "./session.js";
@@ -29,6 +30,7 @@ const HELP_ROWS = [
   ["/agent <name>", "run agent (optionally: task or @file)"],
   ["/workflows", "list workflows"],
   ["/workflow <name>", "run workflow"],
+  ["/skills", "list available skills"],
   ["/triggers", "scheduled cron triggers"],
   ["/memory [agent]", "agent memory path/contents"],
   ["/env [cmd]", "env vars: list, set KEY=VAL, unset KEY"],
@@ -59,6 +61,10 @@ const FLAG_ROWS = [
   ["tim workflow list", "list all workflows"],
   ["tim workflow edit <name>", "open workflow in $EDITOR"],
   ["tim workflow delete <name>", "delete a workflow"],
+  ["tim skill new [name]", "create a new skill (interactive)"],
+  ["tim skill list", "list all skills"],
+  ["tim skill edit <name>", "open skill in $EDITOR"],
+  ["tim skill delete <name>", "delete a skill"],
   ["tim trigger list", "list scheduled triggers"],
   ["tim trigger add <name>", "create a scheduled trigger (interactive)"],
   ["tim trigger remove <name>", "remove a scheduled trigger"],
@@ -252,6 +258,22 @@ export async function runCommand(input) {
       }
       console.log();
       info("create: tim workflow new  •  run: tim run <workflow> \"override task\"");
+      return;
+    }
+    case "skills": {
+      const skills = Object.values(loadSkills());
+      if (!skills.length) {
+        info("no skills found — create one with: tim skill new  (or ask the agent to `create_skill` in chat)");
+        return;
+      }
+      const pad = Math.max(...skills.map((s) => s.name.length)) + 2;
+      console.log();
+      console.log(`  ${c.bold(c.teal("skills"))}`);
+      for (const s of skills) {
+        console.log(`    ${c.white(s.name.padEnd(pad))} ${c.dim(s.description)}`);
+      }
+      console.log();
+      info("create: tim skill new  •  edit: tim skill edit <name>  •  agents consult via read_skill");
       return;
     }
     case "workflow": {

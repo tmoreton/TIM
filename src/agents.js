@@ -17,6 +17,7 @@ export const AGENT_SCHEMA = {
   description: { type: "string", required: false, doc: "One-line description shown in `tim agent list`" },
   model:       { type: "string", required: false, doc: "Optional model override (e.g. claude-sonnet-4-6)" },
   tools:       { type: "array",  required: false, doc: "Tool allowlist — e.g. [read_file, bash, append_memory]. Omit for all tools." },
+  skills:      { type: "array",  required: false, doc: "Skill allowlist — e.g. [deploy-nextjs-vercel, conventional-commit]. Omit for all skills." },
 };
 
 export function ensureAgentsDir() {
@@ -52,12 +53,15 @@ export function agentExists(name) {
   return fs.existsSync(path.join(getAgentsDir(), `${name}.md`));
 }
 
-export function writeAgentProfile(name, { description = "", tools = null, model = null, systemPrompt = "" }) {
+export function writeAgentProfile(name, { description = "", tools = null, skills = null, model = null, systemPrompt = "" }) {
   ensureAgentsDir();
-  const normalizedTools = tools === "all" || !tools ? null
-    : Array.isArray(tools) ? tools
-    : String(tools).split(",").map(s => s.trim()).filter(Boolean);
-  const meta = { name, description, model, tools: normalizedTools };
+  const normalizeList = (v) =>
+    v === "all" || !v ? null
+    : Array.isArray(v) ? v
+    : String(v).split(",").map(s => s.trim()).filter(Boolean);
+  const normalizedTools = normalizeList(tools);
+  const normalizedSkills = normalizeList(skills);
+  const meta = { name, description, model, tools: normalizedTools, skills: normalizedSkills };
   const filepath = path.join(getAgentsDir(), `${name}.md`);
   fs.writeFileSync(filepath, renderFrontmatter(meta, AGENT_SCHEMA, systemPrompt));
   bootstrapMemory(name, { description });
@@ -93,7 +97,8 @@ export function loadAgents() {
       name,
       description: meta.description || "",
       model: meta.model || null,
-      tools: Array.isArray(meta.tools) ? meta.tools : null, // null = all
+      tools: Array.isArray(meta.tools) ? meta.tools : null,   // null = all
+      skills: Array.isArray(meta.skills) ? meta.skills : null, // null = all
       systemPrompt: body,
       source: full,
     };

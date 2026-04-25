@@ -40,11 +40,12 @@ export async function run({ workflow, task }, { signal }) {
   }
 
   // Compose a sub-profile: agent identity (for memory auto-load) + workflow's
-  // task-specific instructions appended to the agent's base prompt. Tool
-  // allowlist can be narrowed by the workflow.
+  // task-specific instructions appended to the agent's base prompt. Tool and
+  // skill allowlists can both be narrowed by the workflow.
   const subProfile = {
     ...agent,
     tools: w.tools || agent.tools,
+    skills: w.skills || agent.skills,
     systemPrompt: w.systemPrompt
       ? `${agent.systemPrompt}\n\n## Current task — ${workflow}\n\n${w.systemPrompt}`
       : agent.systemPrompt,

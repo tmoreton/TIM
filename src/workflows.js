@@ -20,6 +20,7 @@ export const WORKFLOW_SCHEMA = {
   task:        { type: "string", required: false, doc: "Default user message sent when fired without an override (one line)" },
   precheck:    { type: "string", required: false, doc: "Optional shell command — workflow skips its run if this returns no output" },
   tools:       { type: "array",  required: false, doc: "Override the agent's tool allowlist for this workflow — e.g. [read_file, web_fetch]" },
+  skills:      { type: "array",  required: false, doc: "Override the agent's skill allowlist for this workflow — e.g. [deploy-nextjs-vercel]" },
 };
 
 export function ensureWorkflowsDir() {
@@ -30,13 +31,14 @@ export function workflowExists(name) {
   return fs.existsSync(path.join(getWorkflowsDir(), `${name}.md`));
 }
 
-export function writeWorkflow(name, { description = "", agent, task = "", precheck = null, tools = null, systemPrompt = "" }) {
+export function writeWorkflow(name, { description = "", agent, task = "", precheck = null, tools = null, skills = null, systemPrompt = "" }) {
   ensureWorkflowsDir();
   const meta = {
     name, description, agent,
     task: task ? task.replace(/\n/g, " ") : "",
     precheck: precheck || null,
     tools: Array.isArray(tools) && tools.length ? tools : null,
+    skills: Array.isArray(skills) && skills.length ? skills : null,
   };
   const filepath = path.join(getWorkflowsDir(), `${name}.md`);
   fs.writeFileSync(filepath, renderFrontmatter(meta, WORKFLOW_SCHEMA, systemPrompt));
@@ -78,6 +80,7 @@ export function loadWorkflows() {
       systemPrompt: body,
       precheck: meta.precheck || null,
       tools: Array.isArray(meta.tools) ? meta.tools : null,
+      skills: Array.isArray(meta.skills) ? meta.skills : null,
       source: full,
     };
   }
@@ -85,11 +88,15 @@ export function loadWorkflows() {
 }
 
 // Merge a workflow's task-specific overrides onto its agent's base profile.
-// Returns a new profile with combined tools and systemPrompt for a workflow run.
+// Returns a new profile with combined tools, skills, and systemPrompt for
+// a workflow run. Workflow allowlists override the agent's when set, so
+// triggers can narrow (or expand, if the agent itself is narrower) the
+// capability surface per task without editing the agent profile.
 export function mergeProfile(agent, workflow) {
   return {
     ...agent,
     tools: workflow.tools || agent.tools,
+    skills: workflow.skills || agent.skills,
     systemPrompt: workflow.systemPrompt
       ? `${agent.systemPrompt}\n\n## Current task — ${workflow.name}\n\n${workflow.systemPrompt}`
       : agent.systemPrompt,

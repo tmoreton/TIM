@@ -9,8 +9,8 @@ import path from "node:path";
 import { confirm } from "../permissions.js";
 import { editDiff, writeDiff } from "../ui.js";
 import { TIM_SOURCE_ROOT, isInsideTimSource } from "../paths.js";
-import { planMultiEdit } from "./edit-utils.js";
-import { runExclusive } from "./file-mutation-queue.js";
+import { planMultiEdit } from "../edits.js";
+import { runExclusive } from "../file-lock.js";
 
 // Returns an error string if `abs` is inside tim's own source but the user
 // isn't currently working from within the tim directory. Keeps accidental

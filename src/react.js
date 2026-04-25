@@ -7,6 +7,7 @@ import { loadProjectContext } from "./config.js";
 import { formatMemoryForContext } from "./memory.js";
 import { createSession, save as saveSession } from "./session.js";
 import { rehydrateReadsFromMessages } from "./tools/fs.js";
+import { loadSkills } from "./skills.js";
 
 import { spawnSync } from "node:child_process";
 
@@ -200,9 +201,11 @@ const findSafeTailStart = (messages) => {
 };
 
 
-// Agents always get these tools so orchestration + memory upkeep work even
-// when a profile sets a restrictive `tools: [...]` allowlist.
-const AGENT_BASE_TOOLS = ["spawn_workflow", "update_memory", "append_memory"];
+// Agents always get these tools so orchestration + memory upkeep + skill
+// consultation work even when a profile sets a restrictive `tools: [...]`
+// allowlist. read_skill is baseline because skills are a read-only
+// capability that any agent can benefit from when one matches.
+const AGENT_BASE_TOOLS = ["spawn_workflow", "update_memory", "append_memory", "read_skill"];
 
 export async function createAgent(profile = null) {
   const allTools = await getTools();
@@ -264,6 +267,28 @@ export async function createAgent(profile = null) {
     return `Available tools:\n${lines.join("\n")}`;
   };
 
+  // Advertise available skills in the system prompt. Only name + description
+  // per skill — bodies stay on disk and are lazy-loaded via read_skill when
+  // the model decides a skill is relevant. Per-profile `skills: [...]`
+  // allowlist narrows the visible set; omitted = all skills are visible.
+  // Returns null when the effective set is empty so buildSystem can skip
+  // the section entirely.
+  const buildSkillsBlock = () => {
+    const all = loadSkills();
+    const names = Object.keys(all);
+    if (!names.length) return null;
+    const allow = effectiveProfile?.skills;
+    const active = Array.isArray(allow)
+      ? names.filter((n) => allow.includes(n))
+      : names;
+    if (!active.length) return null;
+    const lines = active.map((n) => `- ${n}: ${all[n].description}`);
+    return `Available skills (reusable procedures — call read_skill(name) to load the full body):
+${lines.join("\n")}
+
+When a user's task matches a skill description, read_skill BEFORE attempting the task — skills encode canonical steps, gotchas, and verification. Don't reinvent them.`;
+  };
+
   const buildGuidelinesBlock = () => {
     const seen = new Set();
     const bullets = [];
@@ -290,6 +315,7 @@ export async function createAgent(profile = null) {
 
     const cwdContext = buildCwdContext();
     const toolsBlock = buildToolsBlock();
+    const skillsBlock = buildSkillsBlock();
     const guidelinesBlock = buildGuidelinesBlock();
 
     if (effectiveProfile?.systemPrompt) {
@@ -297,6 +323,7 @@ export async function createAgent(profile = null) {
         effectiveProfile.systemPrompt,
         cwdContext,
         toolsBlock,
+        skillsBlock,
         guidelinesBlock,
         agentMemoryNote,
         ctx,
@@ -307,7 +334,7 @@ export async function createAgent(profile = null) {
 
     const base = `You are tim, a minimal coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.`;
 
-    return [base, cwdContext, toolsBlock, guidelinesBlock, ctx, memorySection, tail].filter(Boolean).join("\n\n");
+    return [base, cwdContext, toolsBlock, skillsBlock, guidelinesBlock, ctx, memorySection, tail].filter(Boolean).join("\n\n");
   };
 
   const reset = () => {
