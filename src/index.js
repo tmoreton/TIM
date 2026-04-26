@@ -670,6 +670,26 @@ if (resumeIdx !== -1) {
   }
   resumeSession(data);
   ui.success(`resumed ${data.id} (${(data.messages || []).length} messages)`);
+
+  // Print conversation history
+  if (data.messages && data.messages.length > 0) {
+    console.log();
+    console.log(ui.c.gray("─".repeat(60)));
+    const userAndAssistant = data.messages.filter(m => m.role === "user" || m.role === "assistant");
+    for (const msg of userAndAssistant) {
+      if (msg.role === "user") {
+        const content = typeof msg.content === "string" ? msg.content : msg.content?.[0]?.text || "";
+        const preview = content.length > 80 ? content.slice(0, 77) + "..." : content;
+        console.log(ui.c.green(`› ${preview}`));
+      } else if (msg.role === "assistant") {
+        const content = typeof msg.content === "string" ? msg.content : "";
+        const preview = content.length > 150 ? content.slice(0, 147) + "..." : content;
+        if (preview) console.log(ui.c.cyan(preview));
+      }
+    }
+    console.log(ui.c.gray("─".repeat(60)));
+    console.log();
+  }
 }
 
 // Only start REPL if not running a subcommand
