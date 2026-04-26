@@ -74,10 +74,14 @@ const stripReasoning = (messages) =>
 
 const resolveRequest = (body) => {
   const { provider, model } = pickProvider(body.model);
+  const { usage, ...rest } = body;
+  const out = { ...rest, model, messages: stripReasoning(body.messages) };
+  // `usage: { include: true }` is OpenRouter-only — Fireworks 400s on unknown fields.
+  if (provider === providers.openrouter && usage) out.usage = usage;
   return {
     url: `${provider.baseUrl}/chat/completions`,
     headers: provider.headers(),
-    body: { ...body, model, messages: stripReasoning(body.messages) },
+    body: out,
   };
 };
 
