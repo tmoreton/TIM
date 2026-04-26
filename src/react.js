@@ -240,7 +240,7 @@ export async function createAgent(profile = null) {
     model: effectiveProfile?.model || profile?.model || DEFAULT_MODEL,
     messages: [],
     session: null,
-    usage: { prompt: 0, completion: 0, lastPrompt: 0 },
+    usage: { prompt: 0, completion: 0, lastPrompt: 0, lastCost: 0, totalCost: 0 },
     toolCache: new ToolCache(),
     profile: effectiveProfile || profile,
     persist: true, // always persist sessions for interactive REPL use
@@ -343,7 +343,7 @@ When a user's task matches a skill description, read_skill BEFORE attempting the
     if (state.session && state.profile?.name) {
       state.session.agent = state.profile.name;
     }
-    state.usage = { prompt: 0, completion: 0, lastPrompt: 0 };
+    state.usage = { prompt: 0, completion: 0, lastPrompt: 0, lastCost: 0, totalCost: 0 };
     state.toolCache.clear();
     state.compactionFileOps = { read: new Set(), modified: new Set() };
     state.lastCompactionSummary = null;
@@ -373,7 +373,7 @@ When a user's task matches a skill description, read_skill BEFORE attempting the
       updatedAt: data.updatedAt,
     };
     if (data.model) state.model = data.model;
-    state.usage = data.usage || { prompt: 0, completion: 0, lastPrompt: 0 };
+    state.usage = data.usage || { prompt: 0, completion: 0, lastPrompt: 0, lastCost: 0, totalCost: 0 };
     state.toolCache.clear();
     rehydrateReadsFromMessages(state.messages);
   };
@@ -417,6 +417,8 @@ When a user's task matches a skill description, read_skill BEFORE attempting the
               limit,
               sessionId: state.session?.id,
               model: state.model,
+              lastCost: state.usage.lastCost,
+              totalCost: state.usage.totalCost,
             });
             if (state.usage.lastPrompt / limit >= COMPACT_THRESHOLD) {
               ui.info(`context at ${Math.round((state.usage.lastPrompt / limit) * 100)}% — auto-compacting...`);

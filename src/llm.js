@@ -205,7 +205,7 @@ export class Interrupted extends Error {
 
 export async function streamCompletion({ model, messages, toolSchemas, usage, onToken }, signal) {
   const chunks = stream(
-    { model, messages, tools: toolSchemas, stream_options: { include_usage: true } },
+    { model, messages, tools: toolSchemas, stream_options: { include_usage: true }, usage: { include: true } },
     { signal }
   );
 
@@ -272,6 +272,10 @@ export async function streamCompletion({ model, messages, toolSchemas, usage, on
     usage.prompt += responseUsage.prompt_tokens || 0;
     usage.completion += responseUsage.completion_tokens || 0;
     usage.lastPrompt = responseUsage.prompt_tokens || 0;
+    if (responseUsage.cost != null) {
+      usage.lastCost = responseUsage.cost;
+      usage.totalCost = (usage.totalCost || 0) + responseUsage.cost;
+    }
   }
 
   return {

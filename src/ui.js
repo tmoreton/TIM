@@ -281,12 +281,15 @@ export function writeDiff(content) {
 }
 
 
-export function statusFooter({ lastPromptTokens, limit, sessionId, model }) {
+export function statusFooter({ lastPromptTokens, limit, sessionId, model, lastCost, totalCost }) {
   const parts = [];
   if (lastPromptTokens) {
     const pct = Math.round((lastPromptTokens / limit) * 100);
     const color = pct >= 80 ? "yellow" : pct >= 50 ? "white" : "gray";
     parts.push(c[color](`${(lastPromptTokens / 1000).toFixed(1)}k/${(limit / 1000).toFixed(0)}k (${pct}%)`));
+  }
+  if (totalCost > 0) {
+    parts.push(c.dim(`$${lastCost.toFixed(4)} ($${totalCost.toFixed(4)} total)`));
   }
   if (sessionId) parts.push(c.dim(`tim --resume ${sessionId}`));
   if (model) parts.push(c.dim(model));
