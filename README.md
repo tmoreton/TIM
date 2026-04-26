@@ -3,7 +3,7 @@
   <br>
   <em>the minimalist coding companion</em>
   <br><br>
-  <strong>~5,055 source lines of JavaScript · ZERO runtime dependencies</strong>
+  <strong>~5,845 source lines of JavaScript · ZERO runtime dependencies</strong>
   <br><br>
   <p>A minimal AI coding assistant. Runs locally, works with any LLM provider (Fireworks, OpenRouter, etc.), gives the model file + shell tools, and wraps it in a ReAct loop.</p>
   <p>The whole point is to be readable—small enough to understand end-to-end.</p>
