@@ -20,6 +20,7 @@ import { readMemory, memoryPath, listMemories } from "./memory.js";
 import { list as listSessions } from "./session.js";
 import { setEnv, unsetEnv, listEnv, mask } from "./env.js";
 
+import { setPlanMode, isPlanMode } from "./permissions.js";
 import { c, info, success, error, exitHint } from "./ui.js";
 import { getModelCatalog } from "./llm.js";
 
@@ -39,6 +40,7 @@ const HELP_ROWS = [
   ["/clear", "new session"],
   ["/compact", "summarize old messages"],
   ["/sessions", "saved conversations"],
+  ["/plan", "draft without executing"],
 
 
   ["/exit", "quit"],
@@ -326,6 +328,24 @@ export async function runCommand(input) {
       return;
     }
 
+    case "plan": {
+      const next = !isPlanMode();
+      setPlanMode(next);
+      if (next) {
+        console.log(
+          `  ${c.teal("◐")}  ${c.bold("plan mode ON")} ${c.dim("— model will deliberate, self-critique, then finalize")}`,
+        );
+        console.log(
+          `  ${c.dim("phases: restate → investigate → assumptions/risks → options → plan (files · steps · verification)")}`,
+        );
+        console.log(
+          `  ${c.dim("edit_file, write_file, and bash are blocked. /plan to exit.")}`,
+        );
+        return;
+      }
+      success("plan mode OFF — ready to execute");
+      return;
+    }
     case "memory": {
       if (!arg) {
         const mems = listMemories();

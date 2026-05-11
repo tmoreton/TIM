@@ -3,8 +3,9 @@
 export const setReadline = () => {};
 export const setAutoAccept = () => {};
 export const isAutoAccept = () => true;
-export const setPlanMode = () => {};
-export const isPlanMode = () => false;
+let planMode = false;
+export const setPlanMode = (v) => { planMode = !!v; };
+export const isPlanMode = () => planMode;
 
 export async function confirm(tool, args, preview) {
   return true;
