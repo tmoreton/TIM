@@ -15,6 +15,7 @@ import path from "node:path";
 
 
 const MAX_OUTPUT = 30_000;
+const GRACE_MS = 3_000; // auto-detach long-running processes
 
 const truncateTail = (s) =>
   s.length <= MAX_OUTPUT
@@ -26,7 +27,7 @@ export const schema = {
   function: {
     name: "bash",
     description:
-      "Run a bash command in the current working directory. Use for git, tests, grep, ls, anything. Default timeout 120s.",
+      "Run a bash command in the current working directory. Use for git, tests, grep, ls, anything. Default timeout 120s. Long-running processes are detached after 3s so the CLI stays responsive.",
     parameters: {
       type: "object",
       properties: {
@@ -44,11 +45,35 @@ export async function run({ command, timeout_ms = 120_000 }, ctx = {}) {
     const child = spawn("bash", ["-c", command], { cwd: process.cwd() });
     let timedOut = false;
     let aborted = false;
+    let returnedEarly = false;
+    let finished = false;
 
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, timeout_ms);
+
+    // Grace period: if still running after 3s, assume it's a long-running
+    // process (dev server, watcher, etc.) and return control immediately.
+    const graceTimer = setTimeout(() => {
+      if (child.exitCode === null && !child.killed && !returnedEarly && !aborted && !timedOut) {
+        returnedEarly = true;
+        // Ensure a log file exists for ongoing capture
+        if (!logPath) {
+          const dir = mkdtempSync(path.join(tmpdir(), "tim-bash-"));
+          logPath = path.join(dir, "output.log");
+          logStream = createWriteStream(logPath);
+        }
+        child.unref(); // allow parent to exit independently
+        const output = [stdoutSink.get(), stderrSink.get()].filter(Boolean).join("\n");
+        finish(
+          `Process running in background (PID: ${child.pid}).\n` +
+          `Logs: ${logPath}\n` +
+          `Use \`kill ${child.pid}\` to stop it.` +
+          (output ? `\nOutput so far:\n${truncateTail(output)}` : "")
+        );
+      }
+    }, GRACE_MS);
 
     const onAbort = () => {
       aborted = true;
@@ -99,16 +124,25 @@ export async function run({ command, timeout_ms = 120_000 }, ctx = {}) {
     child.stderr.on("data", (d) => stderrSink.append(d));
 
     const finish = (summary) => {
-      if (logStream) logStream.end();
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      clearTimeout(graceTimer);
+      ctx.signal?.removeEventListener("abort", onAbort);
       resolve(summary);
     };
 
     child.on("close", (code) => {
+      if (finished) {
+        if (logStream) logStream.end();
+        return;
+      }
       clearTimeout(timer);
+      clearTimeout(graceTimer);
       ctx.signal?.removeEventListener("abort", onAbort);
       // Can't know what bash touched — blow away the whole tool cache so
       // subsequent read_file/grep/glob see fresh disk state.
-      ctx.toolCache?.clear();
+      if (!returnedEarly) ctx.toolCache?.clear();
       const status = aborted ? " [aborted]" : timedOut ? " [timeout]" : "";
       const spilled = stdoutSink.spilled + stderrSink.spilled;
       const tail = (label, sink) => {
@@ -128,12 +162,16 @@ export async function run({ command, timeout_ms = 120_000 }, ctx = {}) {
         parts.push(`[Full output: ${logPath}. Use \`tail -n 200 ${logPath}\` or \`grep PATTERN ${logPath}\` to dig in.]`);
       }
       finish(parts.join("\n"));
+      if (logStream) logStream.end();
     });
 
     child.on("error", (err) => {
+      if (finished) return;
       clearTimeout(timer);
+      clearTimeout(graceTimer);
       ctx.signal?.removeEventListener("abort", onAbort);
       finish(`ERROR: ${err.message}`);
+      if (logStream) logStream.end();
     });
   });
 }
