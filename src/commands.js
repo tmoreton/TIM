@@ -5,6 +5,7 @@ import { getTools } from "./tools/index.js";
 import {
   resetMessages,
   getModel,
+  getModelProvider,
   setModel,
   hasProjectContext,
   compact,
@@ -25,7 +26,7 @@ import { getModelCatalog } from "./llm.js";
 const HELP_ROWS = [
   ["/help", "this help"],
   ["/tools", "list available tools"],
-  ["/model [#|id]", "show or switch model"],
+  ["/model [#|id] [provider]", "show or switch model (optional OpenRouter provider slug)"],
   ["/agents", "list agents"],
   ["/agent <name>", "run agent (optionally: task or @file)"],
   ["/workflows", "list workflows"],
@@ -118,9 +119,11 @@ export async function runCommand(input) {
     case "models": {
       const catalog = getModelCatalog();
       const current = await getModel();
+      const currentProvider = await getModelProvider();
       if (!arg) {
         console.log();
-        console.log(`  ${c.bold(c.teal("current"))}  ${c.white(current)}`);
+        const providerSuffix = currentProvider ? c.dim(`  (provider: ${currentProvider})`) : "";
+        console.log(`  ${c.bold(c.teal("current"))}  ${c.white(current)}${providerSuffix}`);
         if (catalog.length) {
           console.log();
           console.log(`  ${c.bold(c.teal("quick-pick"))}`);
@@ -140,12 +143,16 @@ export async function runCommand(input) {
         }
         console.log();
         info("switch by number (e.g. /model 2) or by ID (e.g. /model openrouter/anthropic/claude-sonnet-4.5)");
+        info("pin an OpenRouter provider with a second arg, e.g. /model openrouter/deepseek/deepseek-v4-pro siliconflow/fp8");
         return;
       }
-      const n = Number(arg);
-      const target = Number.isInteger(n) && n >= 1 && n <= catalog.length ? catalog[n - 1].id : arg;
-      await setModel(target);
-      success(`model → ${target}`);
+      const modelArg = rest[0];
+      const providerSlug = rest.slice(1).join(" ").trim() || null;
+      const n = Number(modelArg);
+      const target = Number.isInteger(n) && n >= 1 && n <= catalog.length ? catalog[n - 1].id : modelArg;
+      await setModel(target, providerSlug);
+      const providerSuffix = providerSlug ? c.dim(`  (provider: ${providerSlug})`) : "";
+      success(`model → ${target}${providerSuffix}`);
       return;
     }
     case "clear": {

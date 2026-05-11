@@ -46,7 +46,7 @@ const pickProvider = (model = "") => {
 // shown when OPENROUTER_API_KEY is set. Any ID can still be passed manually
 // to /model — this list is just quick-pick shortcuts.
 const MODEL_CATALOG = [
-  { id: "accounts/fireworks/routers/kimi-k2p5-turbo", label: "Kimi K2.5 Turbo", provider: "fireworks", contextLimit: 262_144 },
+  { id: "accounts/fireworks/routers/kimi-k2p6-turbo", label: "Kimi K2.5 Turbo", provider: "fireworks", contextLimit: 262_144 },
   { id: "openrouter/anthropic/claude-opus-4.7", label: "Claude Opus 4.7", provider: "openrouter", contextLimit: 262_144 },
   { id: "openrouter/openai/gpt-5", label: "GPT-5", provider: "openrouter", contextLimit: 262_144 },
   { id: "openrouter/moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "openrouter", contextLimit: 262_144 },
@@ -74,10 +74,14 @@ const stripReasoning = (messages) =>
 
 const resolveRequest = (body) => {
   const { provider, model } = pickProvider(body.model);
-  const { usage, ...rest } = body;
+  const { usage, modelProvider, ...rest } = body;
   const out = { ...rest, model, messages: stripReasoning(body.messages) };
-  // `usage: { include: true }` is OpenRouter-only — Fireworks 400s on unknown fields.
-  if (provider === providers.openrouter && usage) out.usage = usage;
+  // `usage: { include: true }` and provider routing are OpenRouter-only —
+  // Fireworks 400s on unknown fields.
+  if (provider === providers.openrouter) {
+    if (usage) out.usage = usage;
+    if (modelProvider) out.provider = { only: [modelProvider] };
+  }
   return {
     url: `${provider.baseUrl}/chat/completions`,
     headers: provider.headers(),
@@ -140,6 +144,43 @@ const throwIfBad = async (res) => {
   throw err;
 };
 
+// OpenRouter rejects routing requests with 404 + "No endpoints found that
+// support tool use" when the chosen provider's endpoint for the model doesn't
+// advertise tool calling. The error alone doesn't tell you which providers
+// *would* work — surface that by hitting the endpoints API and listing the
+// tool-capable tags. Best-effort: any failure here just leaves the original
+// error untouched.
+const enrichRoutingError = async (err, body) => {
+  if (err.status !== 404) return err;
+  if (!err.message.includes("No endpoints found that support tool use")) return err;
+  const model = body?.model || "";
+  if (!model.startsWith(providers.openrouter.prefix)) return err;
+  const modelId = model.slice(providers.openrouter.prefix.length);
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 3000);
+    const res = await fetch(
+      `https://openrouter.ai/api/v1/models/${encodeURI(modelId)}/endpoints`,
+      { signal: ctl.signal }
+    );
+    clearTimeout(timer);
+    if (!res.ok) return err;
+    const data = await res.json();
+    const tags = (data?.data?.endpoints || [])
+      .filter((e) => e.supported_parameters?.includes("tools"))
+      .map((e) => e.tag);
+    if (!tags.length) {
+      err.message += `\n  hint: no provider for ${modelId} on OpenRouter currently advertises tool support — pick a different model.`;
+    } else {
+      err.message += `\n  hint: tool-capable providers for ${modelId}: ${tags.join(", ")}`;
+      err.message += `\n        try: /model openrouter/${modelId} ${tags[0]}`;
+    }
+  } catch {
+    // best-effort
+  }
+  return err;
+};
+
 
 export async function complete(body, { signal } = {}) {
   const p = resolveRequest(body);
@@ -149,7 +190,8 @@ export async function complete(body, { signal } = {}) {
     body: JSON.stringify(p.body),
     signal,
   });
-  await throwIfBad(res);
+  try { await throwIfBad(res); }
+  catch (e) { throw await enrichRoutingError(e, body); }
   return res.json();
 }
 
@@ -162,7 +204,8 @@ export async function* stream(body, { signal } = {}) {
     body: JSON.stringify(p.body),
     signal,
   });
-  await throwIfBad(res);
+  try { await throwIfBad(res); }
+  catch (e) { throw await enrichRoutingError(e, body); }
 
   const decoder = new TextDecoder();
   let buffer = "";
@@ -207,9 +250,9 @@ export class Interrupted extends Error {
   }
 }
 
-export async function streamCompletion({ model, messages, toolSchemas, usage, onToken }, signal) {
+export async function streamCompletion({ model, modelProvider, messages, toolSchemas, usage, onToken }, signal) {
   const chunks = stream(
-    { model, messages, tools: toolSchemas, stream_options: { include_usage: true }, usage: { include: true } },
+    { model, modelProvider, messages, tools: toolSchemas, stream_options: { include_usage: true }, usage: { include: true } },
     { signal }
   );
 

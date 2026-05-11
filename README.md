@@ -377,7 +377,7 @@ src/
 |---|---|---|
 | `FIREWORKS_API_KEY` | *(required)* | API key (Fireworks AI) |
 | `OPENROUTER_API_KEY` | — | API key (OpenRouter for more models) |
-| `TIM_MODEL` | `accounts/fireworks/routers/kimi-k2p5-turbo` | model ID |
+| `TIM_MODEL` | `accounts/fireworks/routers/kimi-k2p6-turbo` | model ID |
 | `TIM_CONTEXT_LIMIT` | `128000` | context window (for `/compact` warning) |
 | `TAVILY_API_KEY` | — | Web search API |
 | `TIM_DIR` | `~/.tim` | root for all user data |

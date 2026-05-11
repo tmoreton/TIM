@@ -179,7 +179,7 @@ const PARALLEL_SAFE = new Set([
 const isParallelSafe = (name) => PARALLEL_SAFE.has(name);
 
 const DEFAULT_MODEL =
-  process.env.TIM_MODEL || "accounts/fireworks/routers/kimi-k2p5-turbo";
+  process.env.TIM_MODEL || "accounts/fireworks/routers/kimi-k2p6-turbo";
 
 // End-of-turn compaction target (based on reported usage from last response).
 const COMPACT_THRESHOLD = 0.6;
@@ -238,6 +238,7 @@ export async function createAgent(profile = null) {
 
   const state = {
     model: effectiveProfile?.model || profile?.model || DEFAULT_MODEL,
+    modelProvider: null,
     messages: [],
     session: null,
     usage: { prompt: 0, completion: 0, lastPrompt: 0, lastCost: 0, totalCost: 0 },
@@ -394,7 +395,7 @@ When a user's task matches a skill description, read_skill BEFORE attempting the
         if (signal?.aborted) throw new Interrupted();
 
         const { message } = await streamCompletion(
-          { model: state.model, messages: state.messages, toolSchemas, usage: state.usage, onToken },
+          { model: state.model, modelProvider: state.modelProvider, messages: state.messages, toolSchemas, usage: state.usage, onToken },
           signal
         );
         state.messages.push(message);
@@ -556,7 +557,7 @@ When a user's task matches a skill description, read_skill BEFORE attempting the
     let summary = "";
     const spin = ui.spinner("compacting");
     try {
-      for await (const chunk of stream({ model: state.model, messages: summaryPrompt })) {
+      for await (const chunk of stream({ model: state.model, modelProvider: state.modelProvider, messages: summaryPrompt })) {
         const delta = chunk.choices?.[0]?.delta?.content;
         if (delta) summary += delta;
       }
@@ -591,7 +592,8 @@ When a user's task matches a skill description, read_skill BEFORE attempting the
     reset,
     resume,
     getModel: () => state.model,
-    setModel: (m) => { state.model = m; },
+    getModelProvider: () => state.modelProvider,
+    setModel: (m, providerSlug = null) => { state.model = m; state.modelProvider = providerSlug; },
     getSessionId: () => state.session?.id,
   };
 }
@@ -607,6 +609,7 @@ export const compact       = lazy("compact");
 export const resetMessages = lazy("reset");
 export const resumeSession = lazy("resume");
 export const getModel      = lazy("getModel");
+export const getModelProvider = lazy("getModelProvider");
 export const setModel      = lazy("setModel");
 export const getSessionId  = lazy("getSessionId");
 export const hasProjectContext = () => !!loadProjectContext();
