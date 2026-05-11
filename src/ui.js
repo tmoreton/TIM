@@ -58,7 +58,7 @@ const BANNER = [
 const START = [13, 148, 136]; // deep teal (teal-600)
 const END = [94, 234, 212]; // bright aqua (teal-300)
 
-export function banner(model, cwd, yolo = false) {
+export function banner(model, cwd) {
   console.log();
   for (const line of BANNER) console.log("  " + gradient(line, START, END));
   console.log();
@@ -73,13 +73,10 @@ export function banner(model, cwd, yolo = false) {
     "  " +
       c.dim(`hint    /help for commands · Ctrl+C to interrupt`),
   );
-  if (yolo) {
-    console.log("  " + c.red(`⚠ YOLO mode — edits & bash auto-execute!`));
-  }
   console.log();
 }
 
-export function agentBanner(agentName, model, cwd, yolo = false) {
+export function agentBanner(agentName, model, cwd) {
   console.log();
   for (const line of BANNER) console.log("  " + gradient(line, START, END));
   console.log();
@@ -93,9 +90,6 @@ export function agentBanner(agentName, model, cwd, yolo = false) {
     "  " +
       c.dim(`hint    /help for commands · Ctrl+C to interrupt · /clear to switch to base tim`),
   );
-  if (yolo) {
-    console.log("  " + c.red(`⚠ YOLO mode — edits & bash auto-execute!`));
-  }
   console.log();
 }
 
@@ -296,18 +290,6 @@ export function statusFooter({ lastPromptTokens, limit, sessionId, model, lastCo
   if (!parts.length) return;
   console.log(c.dim("  ─ ") + parts.join(c.dim(" · ")));
 }
-
-export function warn(tool, preview) {
-  console.log();
-  const display = preview && preview.length > 70 ? preview.slice(0, 67) + "..." : preview;
-  console.log(`  ${c.yellow("⚠")}  ${c.bold(tool)} ${c.dim("wants to run:")}`);
-  console.log(`     ${c.white(display)}`);
-}
-
-export function confirmPrompt() {
-  return `  ${c.dim("[")}${c.green("y")}${c.dim("]es / [")}${c.teal("a")}${c.dim("]lways / [")}${c.red("n")}${c.dim("]o ❯ ")}`;
-}
-
 
 export const info = (msg) => console.log(c.dim(`  ${msg}`));
 export const error = (msg) => console.log(c.red(`  ✗ ${msg}`));

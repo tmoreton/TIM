@@ -19,7 +19,7 @@ import { loadTriggers, runTrigger, triggerExists } from "./triggers.js";
 import { readMemory, memoryPath, listMemories } from "./memory.js";
 import { list as listSessions } from "./session.js";
 import { setEnv, unsetEnv, listEnv, mask } from "./env.js";
-import { setAutoAccept, isAutoAccept, setPlanMode, isPlanMode } from "./permissions.js";
+
 import { c, info, success, error, exitHint } from "./ui.js";
 import { getModelCatalog } from "./llm.js";
 
@@ -39,8 +39,8 @@ const HELP_ROWS = [
   ["/clear", "new session"],
   ["/compact", "summarize old messages"],
   ["/sessions", "saved conversations"],
-  ["/auto", "toggle auto-accept (set TIM_AUTO_ACCEPT=1 in $TIM_DIR/.env to persist)"],
-  ["/plan", "draft without executing"],
+
+
   ["/exit", "quit"],
 ];
 
@@ -49,11 +49,11 @@ const HELP_ROWS = [
 const FLAG_ROWS = [
   ["tim", "start fresh interactive session"],
   ["tim <agent>", "chat interactively with a specific agent"],
-  ["tim <agent> --yolo", "chat with agent + auto-accept mode"],
+
   ["tim --resume [id]", "resume latest session, or by id"],
   ["tim --list", "list saved sessions and exit"],
-  ["tim --yolo", "start with auto-accept enabled (use with care)"],
-  ["TIM_AUTO_ACCEPT=1 tim", "default to auto-accept on startup (save in $TIM_DIR/.env)"],
+
+
   ["tim agent new [name]", "create a new agent (interactive)"],
   ["tim agent list", "list all agents"],
   ["tim agent edit <name>", "open agent profile in $EDITOR"],
@@ -325,35 +325,7 @@ export async function runCommand(input) {
       await runAndPrintLast(await createAgent(profile), task, agentName);
       return;
     }
-    case "auto":
-    case "yolo": {
-      const next = !isAutoAccept();
-      setAutoAccept(next);
-      if (next)
-        console.log(
-          `  ${c.yellow("⚠")}  ${c.bold("auto-accept ON")} ${c.dim("— edits and bash commands will run without prompting")}`,
-        );
-      else success("auto-accept OFF");
-      return;
-    }
-    case "plan": {
-      const next = !isPlanMode();
-      setPlanMode(next);
-      if (next) {
-        console.log(
-          `  ${c.teal("◐")}  ${c.bold("plan mode ON")} ${c.dim("— model will deliberate, self-critique, then finalize")}`,
-        );
-        console.log(
-          `  ${c.dim("phases: restate → investigate → assumptions/risks → options → plan (files · steps · verification)")}`,
-        );
-        console.log(
-          `  ${c.dim("edit_file, write_file, and bash are blocked. /plan to exit.")}`,
-        );
-        return;
-      }
-      success("plan mode OFF — ready to execute");
-      return;
-    }
+
     case "memory": {
       if (!arg) {
         const mems = listMemories();

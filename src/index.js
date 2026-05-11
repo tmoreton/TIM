@@ -147,11 +147,7 @@ const runAndPrint = async (sub, task) => {
 
 const argv = process.argv.slice(2);
 
-// Headless runs (tim run, --yolo) should auto-accept without prompting.
-// Set this BEFORE importing permissions.js so it initializes correctly.
-if (argv[0] === "run" || argv.includes("--yolo")) {
-  process.env.TIM_AUTO_ACCEPT = "1";
-}
+
 
 // `tim chat` — a general REPL whose session is filed under "general"
 // regardless of cwd, so it shows up under Chat in the iOS app instead of
@@ -199,10 +195,7 @@ if (firstArgIsAgent) {
     initialTask = argv.slice(startIdx, endIdx).join(" ").trim();
   }
 
-  // Handle --yolo for auto-accept
-  if (argv.includes("--yolo")) {
-    process.env.TIM_AUTO_ACCEPT = "1";
-  }
+
 
   // Handle --resume for session resumption
   const resumeIdx = argv.indexOf("--resume");
@@ -656,9 +649,7 @@ if (argv[0] === "run") {
   await runAndPrint(await createAgent(profile), taskArg);
 }
 
-if (argv.includes("--yolo")) {
-  ui.info("⚠ auto-accept ON (--yolo) — edits and bash run without prompting");
-}
+
 
 const resumeIdx = argv.indexOf("--resume");
 if (resumeIdx !== -1) {

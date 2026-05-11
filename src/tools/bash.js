@@ -1,6 +1,5 @@
 // Bash command execution tool.
 // Runs commands via `bash -c` with configurable timeout (default 120s).
-// Requires user confirmation before running.
 // Handles stdout/stderr buffering with limits and supports abort signals.
 //
 // Buffering: we roll the last MAX_BUFFER bytes per stream in memory (the tail
@@ -13,7 +12,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { confirm } from "../permissions.js";
+
 
 const MAX_OUTPUT = 30_000;
 
@@ -40,8 +39,6 @@ export const schema = {
 };
 
 export async function run({ command, timeout_ms = 120_000 }, ctx = {}) {
-  const ok = await confirm("bash", { command }, command);
-  if (!ok) return "User denied the command.";
 
   return new Promise((resolve) => {
     const child = spawn("bash", ["-c", command], { cwd: process.cwd() });

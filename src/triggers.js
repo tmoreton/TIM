@@ -10,7 +10,7 @@ import { parseCron } from "./cron.js";
 import { loadWorkflows, mergeProfile } from "./workflows.js";
 import { loadAgents } from "./agents.js";
 import { createAgent } from "./react.js";
-import { setAutoAccept } from "./permissions.js";
+
 
 export const getTriggersDir = () => timPath("triggers");
 const statePath = () => path.join(getTriggersDir(), "state.json");
@@ -122,7 +122,7 @@ export async function runTrigger(name, { log = console.log } = {}) {
   const agent = loadAgents()[workflow.agent];
   if (!agent) throw new Error(`agent "${workflow.agent}" not found`);
 
-  setAutoAccept(true);
+
   const sub = await createAgent(mergeProfile(agent, workflow));
   const task = t.task || workflow.task || `Run the ${workflow.name} workflow.`;
 

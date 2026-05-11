@@ -7,7 +7,7 @@ import os from "node:os";
 import { agentTurn, getModel, getSessionId } from "./react.js";
 import { Interrupted } from "./llm.js";
 import { isCommand, runCommand } from "./commands.js";
-import { setReadline, isAutoAccept } from "./permissions.js";
+
 import * as ui from "./ui.js";
 
 
@@ -286,7 +286,7 @@ async function bootRepl({ agent = null, initialAttachments = null, initialTask =
     output: process.stdout,
     prompt: currentAgentName ? ui.agentPrompt(currentAgentName) : ui.prompt(),
   });
-  setReadline(rl);
+
 
   enableBracketedPaste();
   setupPasteDetector();
@@ -298,13 +298,12 @@ async function bootRepl({ agent = null, initialAttachments = null, initialTask =
     process.exit(0);
   });
 
-  const yolo = isAutoAccept();
   if (agent) {
     const react = await import("./react.js");
     react.setMainAgent(agent);
-    ui.agentBanner(currentAgentName, agent.getModel(), process.cwd(), yolo);
+    ui.agentBanner(currentAgentName, agent.getModel(), process.cwd());
   } else {
-    ui.banner(await getModel(), process.cwd(), yolo);
+    ui.banner(await getModel(), process.cwd());
     ui.success("hey 👋 i'm tim, what can i help you with?");
   }
 

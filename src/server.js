@@ -15,7 +15,7 @@ import { createAgent, resumeSession } from "./react.js";
 import { getModelCatalog } from "./llm.js";
 import { qrToANSI } from "./qrcode.js";
 import { getTools } from "./tools/index.js";
-import { setAutoAccept } from "./permissions.js";
+
 import { load as loadSession, save as saveSession, list as listSessions, listByFolder, remove as removeSession } from "./session.js";
 
 const TICK_MS = 30_000;
@@ -640,7 +640,7 @@ const MAX_RESTART_ATTEMPTS = 10;
 const RESTART_DELAY_MS = 5000;
 
 async function runServer({ tailscale = false } = {}) {
-  setAutoAccept(true);
+
 
   // Always bind to 0.0.0.0 so the Tailscale peer can reach us at the 100.x
   // IP and localhost clients still work. Tailscale "serve" (if enabled)

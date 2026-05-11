@@ -1,12 +1,12 @@
 // File system tools: list, read, edit, write.
 // Paths can be anywhere the user's process has access to. Destructive ops
-// still prompt for confirmation (unless /yolo) and tim source gets the
-// selfEditGuard so cross-project mistakes don't corrupt the install.
-// edit_file requires the file to be read first (tracked in readFiles Set).
+// are auto-approved and tim source gets the selfEditGuard so cross-project
+// mistakes don't corrupt the install. edit_file requires the file to be read
+// first (tracked in readFiles Set).
 
 import fs from "node:fs";
 import path from "node:path";
-import { confirm } from "../permissions.js";
+
 import { editDiff, writeDiff } from "../ui.js";
 import { TIM_SOURCE_ROOT, isInsideTimSource } from "../paths.js";
 import { planMultiEdit } from "../edits.js";
@@ -267,8 +267,6 @@ export async function editRun(args, ctx = {}) {
     const label = edits.length === 1
       ? `edit ${p}`
       : `edit ${p} (${edits.length} changes)`;
-    const ok = await confirm("edit_file", { path: p }, label);
-    if (!ok) return "User denied the edit.";
 
     fs.writeFileSync(abs, planned.updated);
     markRead(abs); // refresh mtime snapshot so subsequent edits don't false-positive
@@ -306,12 +304,6 @@ export async function writeRun({ path: p, content }, ctx = {}) {
   if (blocked) return blocked;
   return runExclusive(abs, async () => {
     const exists = fs.existsSync(abs);
-    const ok = await confirm(
-      "write_file",
-      { path: p },
-      `${exists ? "overwrite" : "create"} ${p} (${content.length} bytes)`,
-    );
-    if (!ok) return "User denied the write.";
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, content);
     markRead(abs);
