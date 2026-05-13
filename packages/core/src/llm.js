@@ -46,7 +46,7 @@ const pickProvider = (model = "") => {
 // shown when OPENROUTER_API_KEY is set. Any ID can still be passed manually
 // to /model — this list is just quick-pick shortcuts.
 const MODEL_CATALOG = [
-  { id: "accounts/fireworks/routers/kimi-k2p6-turbo", label: "Kimi K2.5 Turbo", provider: "fireworks", contextLimit: 262_144 },
+  { id: "accounts/fireworks/routers/kimi-k2p6-turbo", label: "Kimi K2.6 Turbo", provider: "fireworks", contextLimit: 262_144 },
   { id: "openrouter/anthropic/claude-opus-4.7", label: "Claude Opus 4.7", provider: "openrouter", contextLimit: 262_144 },
   { id: "openrouter/openai/gpt-5", label: "GPT-5", provider: "openrouter", contextLimit: 262_144 },
   { id: "openrouter/moonshotai/kimi-k2.6", label: "Kimi K2.6", provider: "openrouter", contextLimit: 262_144 },

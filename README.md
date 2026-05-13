@@ -1,26 +1,64 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/tmoreton/heytim-web/main/tim.svg" width="50%" alt="HeyTim">
   <br>
-  <em>the minimalist coding companion</em>
+  <em>a thoughtful coding companion</em>
   <br><br>
-  <strong>~5,845 source lines of JavaScript · ZERO runtime dependencies</strong>
+  <strong>5,027 source lines of JavaScript · ZERO runtime dependencies</strong>
   <br><br>
-  <p>A minimal AI coding assistant. Runs locally, works with any LLM provider (Fireworks, OpenRouter, etc.), gives the model file + shell tools, and wraps it in a ReAct loop.</p>
-  <p>The whole point is to be readable—small enough to understand end-to-end.</p>
+  <p>A minimal AI coding assistant. Runs locally, works with any LLM provider (Fireworks, OpenRouter, etc.), gives the model file + shell + web + image tools, and wraps it in a ReAct loop.</p>
+  <p>The whole point is to be readable — small enough to understand end-to-end.</p>
 </div>
+
+---
+
+## The family
+
+This repo (`heytim`) is a workspace monorepo with two packages, and pairs with two companion repos. You install what you want.
+
+| Package / Repo | What it gives you | Required? |
+|---|---|---|
+| **`@heytim/core`** (this repo, `packages/core/`) | All agent logic — react loop, tools, sessions, agents, workflows, triggers, memory | always |
+| **`@heytim/cli`** (this repo, `packages/cli/`) | `tim` — the interactive REPL + headless subcommands | always |
+| **[`@heytim/server`](https://github.com/tmoreton/heytim-server)** (separate repo) | `tim-server` — HTTP/WebSocket API, cron scheduler, web UI at `localhost:8080` | optional |
+| **[`heytim-ios`](https://github.com/tmoreton/heytim-ios)** (separate repo) | iOS app that chats with `tim-server` over Tailscale | optional |
+
+The CLI works standalone. The web UI and the iOS app both talk to `@heytim/server`, which links back to this repo's `@heytim/core` at runtime (no duplicate install of the agent code).
 
 ---
 
 ## Install
 
 ```bash
-git clone https://github.com/tmoreton/TIM.git && cd TIM
-npm link # installs the `tim` binary globally
-
-tim /env set FIREWORKS_API_KEY=...
-tim /env set OPENROUTER_API_KEY=...
-tim /env set TAVILY_API_KEY=...   # optional, enables web_search
+git clone https://github.com/tmoreton/heytim.git ~/Code/heytim
+cd ~/Code/heytim
+npm install                          # workspace install + auto-links `tim` globally
 ```
+
+`npm install` runs a `postinstall` hook that:
+1. Sets up the workspace symlinks (`@heytim/core` ↔ `@heytim/cli`).
+2. Registers `tim` as a global bin via `npm link --workspaces`.
+
+After this, `tim` is on your `$PATH`.
+
+```bash
+tim env set OPENROUTER_API_KEY=sk-...    # or FIREWORKS_API_KEY
+tim env set TAVILY_API_KEY=...           # optional, enables web_search
+tim                                       # start chatting
+```
+
+### + the server (web UI + scheduler)
+
+If you also want the web UI at `http://localhost:8080` and the cron-trigger daemon, install [`heytim-server`](https://github.com/tmoreton/heytim-server) **after** heytim:
+
+```bash
+git clone https://github.com/tmoreton/heytim-server.git ~/Code/heytim-server
+cd ~/Code/heytim-server
+npm install                          # links @heytim/core and registers `tim-server`
+tim-server                           # http://localhost:8080
+tim-server --tailscale               # also expose over Tailscale
+```
+
+The order matters: heytim's `npm install` registers `@heytim/core` globally; `heytim-server`'s postinstall consumes that global link.
 
 ---
 
@@ -35,8 +73,8 @@ agent          ← identity + memory + tool allowlist + system prompt
 ```
 
 - **Agent** — a long-lived persona. Owns a memory file (auto-loaded into every run), an optional tool allowlist, and a system prompt. Example: `traveling-developer` — your YouTube/X brand identity.
-- **Workflow** — a task spec bound to an owning agent. Inherits the agent's identity + memory and adds task-specific instructions (and optionally a narrower tool allowlist). Example: `youtube-daily-report` — owned by `traveling-developer`, runs daily analytics + email.
-- **Trigger** — a cron schedule that fires a workflow with an optional task override. The `tim start` daemon runs them.
+- **Workflow** — a task spec bound to an owning agent. Inherits the agent's identity + memory and adds task-specific instructions (and optionally a narrower tool allowlist). Example: `youtube-daily-report` — owned by `traveling-developer`, runs daily analytics.
+- **Trigger** — a cron schedule that fires a workflow with an optional task override. The `tim-server` daemon runs them.
 - **Memory** — per-agent persistent context at `$TIM_DIR/memory/<agent>.md`. Auto-loaded into the system prompt each turn. The agent calls `append_memory` to save durable findings.
 
 Inside a chat, the model can also create these for you via the `create_agent` and `create_workflow` tools — no need to learn the file format.
@@ -147,14 +185,14 @@ tim run morning-research "custom task"         # override task
 
 ## Scheduling with triggers
 
-Triggers fire workflows on a cron schedule. The `tim start` daemon runs them.
+Triggers fire workflows on a cron schedule. The `tim-server` daemon (in the [heytim-server](https://github.com/tmoreton/heytim-server) repo) runs them.
 
 ```bash
 tim trigger add morning-research-daily   # interactive: schedule, workflow, optional task
 tim trigger list                         # see all
 tim trigger run <name>                   # fire immediately for testing
 tim trigger remove <name>
-tim start                                # run the daemon (auto-restarts on crash)
+tim-server                               # run the daemon (auto-restarts on crash) — needs heytim-server installed
 ```
 
 Or hand-edit `$TIM_DIR/triggers/<name>.md`:
@@ -172,10 +210,10 @@ workflow: morning-research
 
 ## Custom tools
 
-Drop a `.js` file in `src/tools/` that exports `tools = { name: { schema, run } }`:
+Drop a `.js` file in `packages/core/src/tools/` that exports `tools = { name: { schema, run } }`:
 
 ```js
-// src/tools/my_thing.js
+// packages/core/src/tools/my_thing.js
 export const tools = {
   my_thing: {
     schema: {
@@ -197,7 +235,7 @@ export const tools = {
 };
 ```
 
-Save and restart `tim`. Auto-discovered. No registry edits, no `index.js` changes. One file can register multiple tools — see `src/tools/fs.js` (4 tools) or `src/tools/scaffold.js` (2 tools) for examples.
+Save and restart `tim`. Auto-discovered. No registry edits, no `index.js` changes. One file can register multiple tools — see `packages/core/src/tools/fs.js` (4 tools) or `packages/core/src/tools/scaffold.js` (2 tools) for examples.
 
 ---
 
@@ -224,7 +262,7 @@ You → "research the news"
 
 [trigger: morning-research-daily, "0 8 * * *"]
        │
-       └─ each day at 8am:  fires `morning-research` workflow with default task
+       └─ each day at 8am:  tim-server fires `morning-research` workflow with default task
                             (no human in the loop — daemon does it)
 ```
 
@@ -247,9 +285,11 @@ You → "research the news"
 | `append_memory` | append dated section to agent memory file |
 | `capture_webpage` | screenshot a URL via headless Chrome |
 | `capture_desktop` | screenshot the user's desktop |
+| `generate_image` | image generation via OpenRouter Gemini (requires `OPENROUTER_API_KEY`) |
 | `spawn_workflow` | run a workflow as a sub-session |
 | `create_agent` | scaffold a new agent file from inside a chat |
 | `create_workflow` | scaffold a new workflow file from inside a chat |
+| `create_skill` | scaffold a reusable procedural recipe |
 
 ---
 
@@ -263,6 +303,7 @@ TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
 ├── TIM.md                  # global rules + directory conventions (auto-bootstrapped)
 ├── agents/                 # Agent profiles (*.md with frontmatter)
 ├── workflows/              # Workflow task specs (*.md)
+├── skills/                 # Reusable procedural recipes (*.md)
 ├── triggers/               # Scheduled cron triggers (*.md)
 ├── memory/                 # Agent memory files (*.md)
 ├── sessions/               # Saved conversation history (JSON, grouped by folder)
@@ -281,7 +322,8 @@ TIM stores all user data, configuration, and state in `~/.tim` (or `$TIM_DIR`):
 | `TIM.md` | Global rules + directory conventions. Loaded into every system prompt |
 | `agents/` | Agent identity profiles (schema-validated on load) |
 | `workflows/` | Task specs bound to an agent (schema-validated on load) |
-| `triggers/` | Cron-scheduled workflows. Run by `tim start` daemon |
+| `skills/` | Reusable procedural recipes any agent can consult via `read_skill(name)` |
+| `triggers/` | Cron-scheduled workflows. Run by the `tim-server` daemon |
 | `memory/` | Persistent agent memory. Auto-loaded into context |
 | `sessions/` | Saved REPL conversations. Resume with `tim --resume` or `/sessions` |
 | `output/<agent>/<kind>/` | Everything an agent produces — reports, drafts, images, data, reusable scripts. Screenshots auto-route to `images/`. Reusable helpers live in `scripts/` with a header comment noting the creating agent/workflow. |
@@ -296,20 +338,20 @@ A project-local `TIM.md` in your cwd is also loaded (after the global one) — u
 |---------|-------------|
 | `/help` | show this help |
 | `/tools` | list available tools |
-| `/model [#\|id]` | show or switch model |
+| `/model [#\|id] [provider]` | show or switch model (optional OpenRouter provider slug) |
 | `/agents` | list agents |
-| `/agent <name>` | run agent (optionally with task or @file) |
+| `/agent <name>` | run agent (optionally: task or @file) |
 | `/workflows` | list workflows |
 | `/workflow <name>` | run workflow |
-| `/triggers` | list scheduled cron triggers |
+| `/skills` | list available skills |
+| `/triggers` | scheduled cron triggers |
 | `/memory [agent]` | show agent memory path/contents |
-| `/loc` / `/sloc` | source lines of code (with/without comments) |
+| `/env [cmd]` | env vars: list, set KEY=VAL, unset KEY |
+| `/loc` | source lines of code |
 | `/clear` | start a new session |
 | `/compact` | summarize old messages |
 | `/sessions` | list saved conversations |
-| `/auto` | toggle auto-accept |
 | `/plan` | draft without executing |
-| `/env` | manage env vars (list/set/unset) |
 | `/exit` | quit |
 
 ---
@@ -321,53 +363,66 @@ A project-local `TIM.md` in your cwd is also loaded (after the global one) — u
 | `tim` | start fresh interactive session |
 | `tim chat` | general chat — session filed under `general` regardless of cwd |
 | `tim <agent>` | chat interactively with a specific agent |
-| `tim <agent> --yolo` | chat with agent + auto-accept mode |
+| `tim <agent> "task"` | chat with an initial task |
 | `tim --resume [id]` | resume latest session, or by id |
-| `tim --list` | list saved sessions |
-| `tim --yolo` | start with auto-accept enabled |
-| `tim run <workflow\|agent> "task"` | run headlessly |
+| `tim --list` | list saved sessions and exit |
+| `tim run <workflow\|agent> "task"` | run headlessly, print result |
 | `tim agent new\|list\|edit\|delete` | manage agents |
 | `tim workflow new\|list\|edit\|delete` | manage workflows |
+| `tim skill new\|list\|edit\|delete` | manage skills |
 | `tim trigger list\|add\|remove\|run` | manage scheduled triggers |
-| `tim start` | start the cron scheduler daemon |
+| `tim env list\|set\|unset` | manage env vars |
+| `tim-server` | run the scheduler + web UI ([heytim-server](https://github.com/tmoreton/heytim-server)) |
 
 ---
 
 ## Project Layout
 
 ```
-src/
-├── index.js          # CLI entry: parse args, start REPL or headless mode
-├── react.js          # ReAct loop: stream LLM, execute tool calls, track tokens
-├── repl.js           # Readline interface: input, attachments, SIGINT
-├── llm.js            # API clients for Fireworks + OpenRouter with SSE parser
-├── agents.js         # Load + write agent profiles (schema-driven)
-├── workflows.js      # Load + write workflows (schema-driven)
-├── triggers.js       # Cron triggers: load, write, fire
-├── cron.js           # Minimal cron expression parser + matcher
-├── commands.js       # Slash commands: /help, /model, /agent, /env, etc
-├── permissions.js    # Confirm prompts, auto-accept (/yolo), plan mode
-├── ui.js             # ANSI colors, spinner, markdown rendering, banners
-├── config.js         # Load TIM.md context files (global + project)
-├── env.js            # Read/write $TIM_DIR/.env, push to process.env
-├── memory.js         # Agent memory persistence
-├── session.js        # Save/load conversation sessions
-├── history.js        # Git snapshot of $TIM_DIR before destructive writes
-├── cache.js          # LRU cache for deterministic tools (read/grep/list)
-├── server.js         # HTTP server, scheduler daemon
-├── paths.js          # Path helpers + frontmatter parser, validator, renderer
-└── tools/
-    ├── index.js      # Auto-discovers all *.js exporting `tools = {...}`
-    ├── fs.js         # list_files, read_file, edit_file, write_file
-    ├── bash.js       # shell command execution with timeout
-    ├── search.js     # grep and glob search
-    ├── spawn.js      # spawn_workflow: run sub-agents headlessly
-    ├── web_fetch.js  # fetch + extract web pages
-    ├── web_search.js # Tavily web search
-    ├── memory.js     # update_memory, append_memory
-    ├── screenshot.js # capture_webpage, capture_desktop
-    └── scaffold.js   # create_agent, create_workflow
+packages/
+├── core/                       # @heytim/core — all agent logic
+│   └── src/
+│       ├── react.js            # ReAct loop: stream LLM, execute tool calls, track tokens
+│       ├── llm.js              # API clients for Fireworks + OpenRouter with SSE parser
+│       ├── agents.js           # Load + write agent profiles (schema-driven)
+│       ├── workflows.js        # Load + write workflows (schema-driven)
+│       ├── skills.js           # Load + write reusable procedural recipes
+│       ├── triggers.js         # Cron triggers: load, write, fire
+│       ├── cron.js             # Minimal cron expression parser + matcher
+│       ├── permissions.js      # Confirm prompts, plan mode
+│       ├── ui.js               # ANSI colors, spinner, markdown rendering, banners
+│       ├── config.js           # Load TIM.md context files (global + project)
+│       ├── env.js              # Read/write $TIM_DIR/.env, push to process.env
+│       ├── memory.js           # Agent memory persistence
+│       ├── session.js          # Save/load conversation sessions
+│       ├── history.js          # Git snapshot of $TIM_DIR before destructive writes
+│       ├── cache.js            # LRU cache for deterministic tools (read/grep/list)
+│       ├── compaction.js       # Conversation summarization for `/compact`
+│       ├── edits.js            # Plan multi-edit operations safely
+│       ├── file-lock.js        # Cross-process file locking
+│       ├── bootstrap.js        # First-launch $TIM_DIR setup (shared CLI/server entry)
+│       ├── paths.js            # Path helpers + frontmatter parser, validator, renderer
+│       └── tools/
+│           ├── index.js        # Auto-discovers all *.js exporting `tools = {...}`
+│           ├── fs.js           # list_files, read_file, edit_file, write_file
+│           ├── bash.js         # shell command execution with timeout
+│           ├── search.js       # grep and glob search
+│           ├── spawn.js        # spawn_workflow: run sub-agents headlessly
+│           ├── web_fetch.js    # fetch + extract web pages
+│           ├── web_search.js   # Tavily web search
+│           ├── memory.js       # update_memory, append_memory
+│           ├── screenshot.js   # capture_webpage, capture_desktop
+│           ├── generate_image.js # OpenRouter Gemini image generation
+│           ├── skill.js        # read_skill from inside an agent
+│           └── scaffold.js     # create_agent, create_workflow, create_skill
+└── cli/                        # @heytim/cli — bin "tim"
+    └── src/
+        ├── index.js            # CLI entry: parse args, start REPL or headless mode
+        ├── repl.js             # Readline interface: input, attachments, SIGINT
+        └── commands.js         # Slash commands: /help, /model, /agent, /env, etc
 ```
+
+The HTTP server, WebSocket API, scheduler daemon, and web UI live in the separate [heytim-server](https://github.com/tmoreton/heytim-server) repo — not here.
 
 ---
 
@@ -375,11 +430,11 @@ src/
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `FIREWORKS_API_KEY` | *(required)* | API key (Fireworks AI) |
-| `OPENROUTER_API_KEY` | — | API key (OpenRouter for more models) |
+| `FIREWORKS_API_KEY` | *(one provider required)* | API key (Fireworks AI) |
+| `OPENROUTER_API_KEY` | *(one provider required)* | API key (OpenRouter for more models + image gen) |
 | `TIM_MODEL` | `accounts/fireworks/routers/kimi-k2p6-turbo` | model ID |
-| `TIM_CONTEXT_LIMIT` | `128000` | context window (for `/compact` warning) |
-| `TAVILY_API_KEY` | — | Web search API |
+| `TIM_CONTEXT_LIMIT` | model default | context window (for `/compact` warning) |
+| `TAVILY_API_KEY` | — | enables `web_search` tool |
 | `TIM_DIR` | `~/.tim` | root for all user data |
-| `TIM_AUTO_ACCEPT` | — | set to `1` to default to auto-accept on startup |
 | `TIM_SESSION_FOLDER` | — | force session folder name (used by `tim chat`) |
+| `TIM_PORT` | `8080` | port for `tim-server` (heytim-server repo) |
