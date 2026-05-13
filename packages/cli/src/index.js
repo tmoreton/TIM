@@ -6,111 +6,24 @@ import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
+import { bootstrapTimDir } from "@heytim/core/bootstrap";
 
-// Standard tim dir — single root for config, sessions, agents, and any
-// user-specific output. Honors $TIM_DIR override, defaults to ~/.tim.
-process.env.TIM_DIR ||= path.join(os.homedir(), ".tim");
-fs.mkdirSync(process.env.TIM_DIR, { recursive: true });
-
-// Bootstrap global TIM.md if missing (directory conventions, rules)
-const globalTimMd = path.join(process.env.TIM_DIR, "TIM.md");
-if (!fs.existsSync(globalTimMd)) {
-  const defaultTimMd = `# TIM Directory Conventions
-
-**Never create loose files in \`$TIM_DIR\` root.** Everything belongs in a subdirectory.
-
-## Directory Structure
-
-| Folder | Purpose |
-|--------|---------|
-| \`agents/\` | Agent persona definitions (managed via \`create_agent\` / \`tim agent new\`) |
-| \`workflows/\` | Workflow task specs (managed via \`create_workflow\` / \`tim workflow new\`) |
-| \`skills/\` | Reusable procedural recipes (managed via \`create_skill\` / \`tim skill new\`) — any agent can consult one via \`read_skill(name)\` when a task matches its description |
-
-## Agents vs workflows vs skills
-
-One agent per domain (\`youtube\`, \`github\`); workflows are tasks within
-that domain (\`youtube-daily-report\`, \`youtube-thumbnail-gen\`). If a
-\`<domain>\` agent already exists, "<domain> <verb-er>" requests are workflows
-under it — not new agents.
-
-Skills are orthogonal: they're "how to do X" recipes any agent can consult.
-An agent (or workflow) can narrow visible skills with \`skills: [name, ...]\`
-in its frontmatter; omit to see all.
-
-| \`triggers/\` | Cron-scheduled workflows |
-| \`memory/\` | Persistent memory per agent (write via \`append_memory\` / \`update_memory\`) |
-| \`sessions/\` | Auto-logged conversation sessions |
-| \`output/\` | All agent-generated artifacts (see rules below) |
-
-## Output rules
-
-Anything you (the agent) create — reports, drafts, JSON data, images, helper
-scripts — lives under \`output/<your-agent-name>/\`. Pick a kebab-case subfolder
-that describes the kind of artifact (\`reports/\`, \`thumbnails/\`, \`drafts/\`,
-\`scripts/\`, etc.) so the user can browse what you've made over time. For a
-one-off task that doesn't fit an existing subfolder, use a task-slug subfolder:
-\`output/<agent>/<task-slug>/\`.
-
-If you're running without a named agent (bare REPL or \`tim chat\`), use
-\`output/general/...\` instead.
-
-Screenshots from \`capture_webpage\` and \`capture_desktop\` already save to
-\`output/<agent>/images/\` automatically — don't duplicate them elsewhere.
-
-## Reusable scripts
-
-Helper code you write for yourself (a YouTube analytics fetcher, an OAuth
-setup flow, a transcript parser) goes under \`output/<your-agent-name>/scripts/\`.
-Default to Node.js (matches the codebase, no extra runtime). **Before writing
-any new script, \`list_files\` on \`output/<your-agent-name>/scripts/\` to see
-what already exists** — extend or reuse instead of recreating.
-
-Every script needs a header comment so the user can trace what made it:
-
-\`\`\`js
-// Purpose: Fetch yesterday's YouTube channel analytics
-// Usage: node fetch_analytics.js [date]
-// Env: YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID
-// Created by: youtube agent (workflow: daily-report)
-\`\`\`
-
-## Memory
-
-Never write to \`memory/\` with \`write_file\` or \`bash\`. Use the memory tools
-(\`append_memory\`, \`update_memory\`).
-`;
-  fs.writeFileSync(globalTimMd, defaultTimMd);
-}
-
-// Bootstrap default agent on first install (minimal tools for coding)
-await import("./agents.js").then(({ bootstrapDefaultAgent }) => bootstrapDefaultAgent());
-
-// Load $TIM_DIR/.env into process.env (existing env wins)
-try {
-  for (const line of fs.readFileSync(path.join(process.env.TIM_DIR, ".env"), "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/i);
-    if (!m || line.trim().startsWith("#")) continue;
-    const val = m[2].replace(/^["'](.*)["']$/, "$1");
-    if (!process.env[m[1]]) process.env[m[1]] = val;
-  }
-} catch {}
+await bootstrapTimDir();
 
 import {
   resumeSession,
   createAgent,
-} from "./react.js";
-import { loadAgents, writeAgentProfile, agentExists, getAgentsDir, deleteAgentProfile } from "./agents.js";
-import { loadWorkflows, writeWorkflow, workflowExists, getWorkflowsDir, deleteWorkflow, mergeProfile } from "./workflows.js";
-import { loadSkills, writeSkillProfile, skillExists, getSkillsDir, deleteSkillProfile } from "./skills.js";
+} from "@heytim/core/react";
+import { loadAgents, writeAgentProfile, agentExists, getAgentsDir, deleteAgentProfile } from "@heytim/core/agents";
+import { loadWorkflows, writeWorkflow, workflowExists, getWorkflowsDir, deleteWorkflow, mergeProfile } from "@heytim/core/workflows";
+import { loadSkills, writeSkillProfile, skillExists, getSkillsDir, deleteSkillProfile } from "@heytim/core/skills";
 import { runCommand } from "./commands.js";
-import { load as loadSession, latest } from "./session.js";
+import { load as loadSession, latest } from "@heytim/core/session";
 
 import { startRepl } from "./repl.js";
-import { loadTriggers, writeTrigger, deleteTrigger, triggerExists, getTriggerState, getTriggersDir, runTrigger } from "./triggers.js";
-import { start } from "./server.js";
-import { commit as commitHistory } from "./history.js";
-import * as ui from "./ui.js";
+import { loadTriggers, writeTrigger, deleteTrigger, triggerExists, getTriggerState, getTriggersDir, runTrigger } from "@heytim/core/triggers";
+import { commit as commitHistory } from "@heytim/core/history";
+import * as ui from "@heytim/core/ui";
 
 const ask = (rl, q, def) => new Promise((res) => {
   const hint = def ? ` (${def})` : "";
@@ -167,7 +80,7 @@ if (argv.includes("--list")) {
 // This must come before the agent subcommand handling
 const agents = loadAgents();
 const firstArgIsAgent = argv[0] && !argv[0].startsWith("-") && ![
-  "agent", "workflow", "trigger", "schedule", "run", "env", "start", "server"
+  "agent", "workflow", "trigger", "schedule", "run", "env"
 ].includes(argv[0]) && agents[argv[0]];
 
 if (firstArgIsAgent) {
@@ -211,7 +124,7 @@ if (firstArgIsAgent) {
   }
 
   // Start REPL with this agent
-  import("./react.js").then(({ createAgent }) => {
+  import("@heytim/core/react").then(({ createAgent }) => {
     createAgent(profile).then((agent) => {
       // Start REPL with the agent's state already initialized
       import("./repl.js").then(({ startReplWithAgent }) => {
@@ -520,20 +433,6 @@ if (argv[0] === "env") {
   process.exit(0);
 }
 
-// tim start / tim server — long-running scheduler + optional HTTP/WebSocket server
-// Both commands do the same thing. Use --tailscale to expose on your Tailscale IP.
-// Server auto-restarts if it crashes (up to 10 attempts).
-//
-// Examples:
-//   tim start              # Scheduler only, local (auto-restarts on crash)
-//   tim start --tailscale  # Scheduler + server on Tailscale IP
-//   tim server             # Same as tim start
-//   tim server --tailscale # Same as tim start --tailscale
-if (argv[0] === "start" || argv[0] === "server") {
-  const tailscale = argv.includes("--tailscale");
-  await start({ tailscale });
-}
-
 // tim trigger list|add|remove|run
 if (argv[0] === "trigger" || argv[0] === "schedule") {
   const sub = argv[1];
@@ -589,7 +488,7 @@ if (argv[0] === "trigger" || argv[0] === "schedule") {
     console.log();
     console.log(`  ✓ created ${filepath}`);
     console.log(`\n  Test it: tim trigger run ${name}`);
-    console.log(`  Start scheduler: tim start\n`);
+    console.log(`  Start scheduler: tim-server\n`);
     process.exit(0);
   }
 
@@ -684,6 +583,6 @@ if (resumeIdx !== -1) {
 }
 
 // Only start REPL if not running a subcommand
-if (!argv[0] || !["agent", "workflow", "trigger", "schedule", "run", "env", "start", "server"].includes(argv[0])) {
+if (!argv[0] || !["agent", "workflow", "trigger", "schedule", "run", "env"].includes(argv[0])) {
   startRepl();
 }

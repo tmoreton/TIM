@@ -1,17 +1,19 @@
 {
-  "name": "tim",
+  "name": "tim-monorepo",
   "version": "0.6.0",
-  "description": "Minimal TIM agent framework CLI",
+  "description": "Minimal TIM agent framework — CLI + server",
+  "private": true,
   "type": "module",
   "license": "Apache-2.0",
   "author": "Tim Moreton",
-  "bin": {
-    "tim": "./src/index.js"
-  },
+  "workspaces": [
+    "packages/core",
+    "packages/cli"
+  ],
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node packages/cli/src/index.js",
+    "postinstall": "npm link --workspaces --if-present"
   },
-  "dependencies": {},
   "engines": {
     "node": ">=22"
   }

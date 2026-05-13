@@ -1,0 +1,17 @@
+{
+  "name": "@heytim/core",
+  "version": "0.6.0",
+  "description": "Shared core for the tim CLI and server: agents, workflows, react loop, tools, sessions.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Tim Moreton",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*.js",
+    "./tools/*": "./src/tools/*.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

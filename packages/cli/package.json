@@ -1,0 +1,20 @@
+{
+  "name": "@heytim/cli",
+  "version": "0.6.0",
+  "description": "tim CLI — interactive REPL and subcommands.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Tim Moreton",
+  "bin": {
+    "tim": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@heytim/core": "*"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

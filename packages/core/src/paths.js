@@ -3,12 +3,29 @@
 // from another project directory. Also houses small shared filesystem helpers
 // (timDir, timPath, parseFrontmatter) that were previously duplicated.
 
+import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
-export const TIM_SOURCE_ROOT = path.resolve(path.dirname(__filename), "..");
+
+// Walk up from this file looking for the workspace root (a package.json with
+// a "workspaces" field). Falls back to two levels up from src/ if no marker
+// is found — preserves pre-monorepo behavior for unbundled installs.
+const findWorkspaceRoot = () => {
+  let dir = path.dirname(__filename);
+  while (dir !== path.dirname(dir)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+      if (pkg.workspaces) return dir;
+    } catch {}
+    dir = path.dirname(dir);
+  }
+  return path.resolve(path.dirname(__filename), "..");
+};
+
+export const TIM_SOURCE_ROOT = findWorkspaceRoot();
 
 export const isInsideTimSource = (absPath) => {
   if (!absPath) return false;

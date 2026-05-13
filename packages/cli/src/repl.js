@@ -4,11 +4,11 @@ import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { agentTurn, getModel, getSessionId } from "./react.js";
-import { Interrupted } from "./llm.js";
+import { agentTurn, getModel, getSessionId } from "@heytim/core/react";
+import { Interrupted } from "@heytim/core/llm";
 import { isCommand, runCommand } from "./commands.js";
 
-import * as ui from "./ui.js";
+import * as ui from "@heytim/core/ui";
 
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
@@ -299,7 +299,7 @@ async function bootRepl({ agent = null, initialAttachments = null, initialTask =
   });
 
   if (agent) {
-    const react = await import("./react.js");
+    const react = await import("@heytim/core/react");
     react.setMainAgent(agent);
     ui.agentBanner(currentAgentName, agent.getModel(), process.cwd());
   } else {

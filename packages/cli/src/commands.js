@@ -1,7 +1,7 @@
 // CLI commands (/help, /model, /clear, /sessions, etc).
 // Each command mutates state via react.js or prints status info.
 
-import { getTools } from "./tools/index.js";
+import { getTools } from "@heytim/core/tools/index";
 import {
   resetMessages,
   getModel,
@@ -11,18 +11,18 @@ import {
   compact,
   getSessionId,
   createAgent,
-} from "./react.js";
-import { loadAgents } from "./agents.js";
-import { loadWorkflows } from "./workflows.js";
-import { loadSkills } from "./skills.js";
-import { loadTriggers, runTrigger, triggerExists } from "./triggers.js";
-import { readMemory, memoryPath, listMemories } from "./memory.js";
-import { list as listSessions } from "./session.js";
-import { setEnv, unsetEnv, listEnv, mask } from "./env.js";
+} from "@heytim/core/react";
+import { loadAgents } from "@heytim/core/agents";
+import { loadWorkflows } from "@heytim/core/workflows";
+import { loadSkills } from "@heytim/core/skills";
+import { loadTriggers, runTrigger, triggerExists } from "@heytim/core/triggers";
+import { readMemory, memoryPath, listMemories } from "@heytim/core/memory";
+import { list as listSessions } from "@heytim/core/session";
+import { setEnv, unsetEnv, listEnv, mask } from "@heytim/core/env";
 
-import { setPlanMode, isPlanMode } from "./permissions.js";
-import { c, info, success, error, exitHint } from "./ui.js";
-import { getModelCatalog } from "./llm.js";
+import { setPlanMode, isPlanMode } from "@heytim/core/permissions";
+import { c, info, success, error, exitHint } from "@heytim/core/ui";
+import { getModelCatalog } from "@heytim/core/llm";
 
 const HELP_ROWS = [
   ["/help", "this help"],
@@ -72,7 +72,7 @@ const FLAG_ROWS = [
   ["tim trigger add <name>", "create a scheduled trigger (interactive)"],
   ["tim trigger remove <name>", "remove a scheduled trigger"],
   ["tim trigger run <name>", "run a trigger immediately"],
-  ["tim start", "start the cron scheduler daemon (auto-restarts on crash)"],
+  ["tim-server", "start the cron scheduler + HTTP/WebSocket daemon (separate install)"],
   ["tim run <workflow|agent> \"task\"", "run a workflow or agent headlessly"],
 ];
 
@@ -158,7 +158,7 @@ export async function runCommand(input) {
       return;
     }
     case "clear": {
-      const { isAgentMode } = await import("./react.js");
+      const { isAgentMode } = await import("@heytim/core/react");
       const wasAgentMode = isAgentMode();
       await resetMessages();
       if (wasAgentMode) {
@@ -386,7 +386,7 @@ export async function runCommand(input) {
           console.log(`  ${c.dim("(none — add one with /trigger add <name>)")}`);
         }
         console.log();
-        info("add, remove, or run triggers; start scheduler with 'tim start'");
+        info("add, remove, or run triggers; start scheduler with 'tim-server'");
         return;
       }
       if (sub === "add") {
@@ -411,24 +411,24 @@ export async function runCommand(input) {
         const description = await ask("Description (optional)", "");
         rl.close();
         
-        const { writeTrigger } = await import("./triggers.js");
+        const { writeTrigger } = await import("@heytim/core/triggers");
         const filepath = writeTrigger(name, { schedule, workflow, task, description });
         success(`created trigger "${name}"`);
         info(`filepath: ${filepath}`);
-        info(`test: /trigger run ${name} | start scheduler: tim start`);
+        info(`test: /trigger run ${name} | start scheduler: tim-server`);
         return;
       }
       if (sub === "remove") {
         if (!name) return error("usage: /trigger remove <name>");
         if (!triggerExists(name)) return error(`trigger "${name}" not found`);
-        const { deleteTrigger } = await import("./triggers.js");
+        const { deleteTrigger } = await import("@heytim/core/triggers");
         deleteTrigger(name);
         success(`removed scheduled trigger "${name}"`);
         return;
       }
       if (sub === "run") {
         if (!name) return error("usage: /trigger run <name>");
-        const { getTriggerState } = await import("./triggers.js");
+        const { getTriggerState } = await import("@heytim/core/triggers");
         info(`running trigger "${name}"...`);
         try {
           await runTrigger(name, { log: (msg) => info(msg.replace(/^→ /, "").replace(/^✓ /, "")) });
